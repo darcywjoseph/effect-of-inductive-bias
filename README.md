@@ -1,21 +1,14 @@
-# effect-of-inductive-bias
+# Effect of Inductive Bias
 
-How many extra labelled examples does a low-bias model (ViT, MLP) need to
-match a domain-specific one (CNN), and how much of that gap do augmentation,
-self-supervision and a pretrained start buy back? Every answer is reported as
-"times the data".
+Investigation into how many extra labelled samples a low-bias model (ViT, MLP) needs to
+match architectures with specific inductive bias (CNN).
 
 ## Setup
 
 ```sh
 uv sync
-uv run python -m bias.data.download --root data     # CIFAR-100, Speech Commands v2
+uv run python -m bias.data.download --root data  # CIFAR-100, Speech Commands v2
 ```
-
-The hyperspectral `.mat` files (Indian Pines, Pavia University) must be placed
-in `data/hsi/` by hand for now; the ehu.eus server refuses scripted downloads.
-Expected names: `Indian_pines_corrected.mat`, `Indian_pines_gt.mat`,
-`PaviaU.mat`, `PaviaU_gt.mat`.
 
 ## Commands
 
@@ -28,7 +21,7 @@ uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy && uv run pytest
 ```
 
-## Protocol notes
+## Experiment notes
 
 - Subsets are nested per seed: each class has one random order per seed and
   every size takes a prefix of it.
