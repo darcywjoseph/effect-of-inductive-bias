@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Milestone 2 pilot: waits for the GPU to be free, then benchmarks and runs
+# Pilot: waits for the GPU to be free, then benchmarks and runs
 # CNN and ViT, no augmentation, at 1%, 10%, 100%, seed 0.
 set -e
 cd "$(dirname "$0")/.."
