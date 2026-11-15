@@ -1,0 +1,20 @@
+dataset: pavia_university
+data_root: data
+metric: balanced_acc
+# Block side and patch radius are provisional until the split check-in.
+data: {block: 32, patch_radius: 4, fractions: [0.6, 0.2, 0.2], split_seed: 0, tries: 2000}
+grid: ["5pc", "10pc", "20pc", "50pc", "100pc", "200pc", "all"]
+anchors: ["5pc", "50pc", "all"]
+targets: {reference: {model: cnn, treatment: aug}, sizes: ["20pc", "100pc"]}
+seeds: [0, 1, 2]
+optimiser: {name: adamw, warmup_frac: 0.05, schedule: cosine}
+batch_size: 128
+steps: {epochs_equivalent: 200, min: 2000, max: 40000, evals: 20}
+sweep:
+  lr: [1.0e-4, 3.0e-4, 1.0e-3]
+  weight_decay: [0.05, 0.1]
+  seed: 0
+models: [cnn, vit, mlp]
+treatments: [none, aug, lejepa, imagenet]
+bootstrap: {draws: 10000, level: 0.95}
+results_csv: results/runs.csv

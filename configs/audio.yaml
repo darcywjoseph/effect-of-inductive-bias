@@ -1,0 +1,19 @@
+dataset: speech_commands_v2
+data_root: data
+metric: top1
+data: {n_mels: 40, win_ms: 30, hop_ms: 10}
+grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
+anchors: ["1%", "10%", "100%"]
+targets: {reference: {model: cnn, treatment: aug}, sizes: ["10%", "50%"]}
+seeds: [0, 1, 2]
+optimiser: {name: adamw, warmup_frac: 0.05, schedule: cosine}
+batch_size: 128
+steps: {epochs_equivalent: 200, min: 2000, max: 40000, evals: 20}
+sweep:
+  lr: [1.0e-4, 3.0e-4, 1.0e-3]
+  weight_decay: [0.05, 0.1]
+  seed: 0
+models: [cnn, vit, mlp]
+treatments: [none, aug, lejepa, imagenet]
+bootstrap: {draws: 10000, level: 0.95}
+results_csv: results/runs.csv
