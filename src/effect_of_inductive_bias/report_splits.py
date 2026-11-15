@@ -1,6 +1,6 @@
 """Writes per-class split sizes for a config, and a block map for scenes.
 
-Usage: python -m bias_worth.report_splits configs/images.yaml
+Usage: python -m effect_of_inductive_bias.report_splits configs/images.yaml
 """
 
 import argparse
@@ -17,8 +17,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from bias_worth import config as config_lib
-from bias_worth.data import cifar, hsi, speech_commands, subsets
+from effect_of_inductive_bias import config as config_lib
+from effect_of_inductive_bias.data import cifar, hsi, speech_commands, subsets
 
 
 def _table(
