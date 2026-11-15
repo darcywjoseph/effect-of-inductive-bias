@@ -2,7 +2,7 @@
 
 import torch
 
-from effect_of_inductive_bias.models import cnn, mlp, vit
+from bias.models import cnn, mlp, vit
 
 
 def build(name: str, dataset: str) -> torch.nn.Module:

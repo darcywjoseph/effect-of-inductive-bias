@@ -4,8 +4,8 @@ import time
 
 import torch
 
-from effect_of_inductive_bias import train
-from effect_of_inductive_bias.models import registry
+from bias import train
+from bias.models import registry
 
 
 def _rate(name: str, bf16: bool, dev: torch.device, steps: int = 100) -> float:

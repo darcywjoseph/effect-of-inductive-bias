@@ -44,7 +44,7 @@ extend-exclude = ["data"]
 select = ["E", "W", "F", "I", "N", "D", "UP", "B", "SIM", "ANN"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["effect_of_inductive_bias"]
+known-first-party = ["bias"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -62,3 +62,6 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.build-backend]
+module-name = "bias"

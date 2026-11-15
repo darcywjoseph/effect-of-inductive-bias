@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from effect_of_inductive_bias.data import subsets
+from bias.data import subsets
 
 LABELS = np.repeat(np.arange(5), [100, 50, 20, 7, 3])
 

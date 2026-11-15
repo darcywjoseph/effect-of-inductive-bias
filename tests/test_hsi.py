@@ -1,6 +1,6 @@
 import numpy as np
 
-from effect_of_inductive_bias.data import hsi
+from bias.data import hsi
 
 
 def toy_labels(seed: int = 0) -> np.ndarray:

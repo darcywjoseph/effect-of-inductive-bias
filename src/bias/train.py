@@ -1,7 +1,7 @@
 """Supervised training and fine-tuning of one configuration.
 
 Usage:
-    python -m effect_of_inductive_bias.train configs/images.yaml --model cnn \
+    python -m bias.train configs/images.yaml --model cnn \
         --treatment none --size 10% --seed 0 --lr 1e-3 --wd 0.05
 """
 
@@ -17,10 +17,10 @@ from typing import Any
 import numpy as np
 import torch
 
-from effect_of_inductive_bias import config as config_lib
-from effect_of_inductive_bias import runlog
-from effect_of_inductive_bias.data import cifar, subsets
-from effect_of_inductive_bias.models import registry
+from bias import config as config_lib
+from bias import runlog
+from bias.data import cifar, subsets
+from bias.models import registry
 
 CIFAR_MEAN = (0.5071, 0.4865, 0.4409)
 CIFAR_STD = (0.2673, 0.2564, 0.2762)

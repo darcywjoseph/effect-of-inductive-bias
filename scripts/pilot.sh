@@ -13,7 +13,7 @@ echo "gpu free at $(date)"
 uv run python scripts/bench_throughput.py
 for size in 1% 10% 100%; do
   for model in cnn vit; do
-    uv run python -m effect_of_inductive_bias.train configs/images.yaml --model $model \
+    uv run python -m bias.train configs/images.yaml --model $model \
       --size $size --seed 0 --lr 1e-3 --wd 0.05 --stage pilot --log results/pilot.csv
     if busy; then echo "WARNING: other GPU work started during $model $size"; fi
   done

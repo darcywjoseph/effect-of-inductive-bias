@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from effect_of_inductive_bias import runlog
+from bias import runlog
 
 RECORD = runlog.RunRecord(
     dataset="cifar100",

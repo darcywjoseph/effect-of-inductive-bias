@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from effect_of_inductive_bias import exchange_rate as er
+from bias import exchange_rate as er
 
 SIZES = np.array([100, 200, 500, 1000, 2000, 5000, 10000], dtype=float)
 
