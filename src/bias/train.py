@@ -218,7 +218,8 @@ def train_run(
         config: Parsed config.
         data: Dataset tensors on the device.
         model_name: "cnn", "vit" or "mlp".
-        treatment: "none" or "aug".
+        treatment: "none", "aug", or "imagenet" (ViT from ImageNet
+          weights, fine-tuned with augmentation).
         size: Grid entry, such as "10%".
         seed: Seed for the subset, the init and the batch order.
         lr: Peak learning rate.
@@ -234,7 +235,7 @@ def train_run(
         ValueError: If the treatment is not implemented.
         FloatingPointError: If the loss diverges.
     """
-    if treatment not in ("none", "aug"):
+    if treatment not in ("none", "aug", "imagenet"):
         raise ValueError(f"treatment not implemented yet: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
     index = torch.from_numpy(subset.indices).to(device)
@@ -244,14 +245,16 @@ def train_run(
     eval_every = max(1, total // config["steps"]["evals"])
 
     torch.manual_seed(seed)
-    model = registry.build(model_name, config["dataset"]).to(device)
+    model = registry.build(
+        model_name, config["dataset"], pretrained=treatment == "imagenet"
+    ).to(device)
     optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     generator = torch.Generator(device="cpu").manual_seed(seed)
     order = torch.randperm(len(index), generator=generator)
     cursor = 0
     best_val, best_state = -1.0, copy.deepcopy(model.state_dict())
     augmented = None
-    if treatment == "aug":
+    if treatment in ("aug", "imagenet"):
         augmented = augment.augmented_batches(
             data.pool_raw[torch.from_numpy(subset.indices)],
             data.pool_y.cpu()[torch.from_numpy(subset.indices)],
