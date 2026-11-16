@@ -28,6 +28,7 @@ def test_every_split_gets_every_class() -> None:
     for k in (hsi.TRAIN, hsi.VAL, hsi.TEST):
         assert set(np.unique(toy_labels()[result.split == k])) == {0, 1, 2}
     assert result.score > 0
+    assert result.covered == 3
 
 
 def test_split_is_deterministic() -> None:

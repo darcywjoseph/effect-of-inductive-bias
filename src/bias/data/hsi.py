@@ -19,8 +19,12 @@ TRAIN, VAL, TEST = 0, 1, 2
 SPLIT_NAMES = ("train", "val", "test")
 
 SCENES = {
-    "indian_pines": ("Indian_pines_corrected.mat", "indian_pines_corrected",
-                     "Indian_pines_gt.mat", "indian_pines_gt"),
+    "salinas": (
+        "Salinas_corrected.mat",
+        "salinas_corrected",
+        "Salinas_gt.mat",
+        "salinas_gt",
+    ),
     "pavia_university": ("PaviaU.mat", "paviaU", "PaviaU_gt.mat", "paviaU_gt"),
 }
 
@@ -44,7 +48,7 @@ def load_scene(root: Path, name: str) -> Scene:
 
     Args:
         root: Data root holding the hsi directory.
-        name: "indian_pines" or "pavia_university".
+        name: "salinas" or "pavia_university".
 
     Returns:
         The scene, with labels shifted so 0 is the first class.
@@ -63,13 +67,22 @@ class BlockSplit:
         block_split: Split of every pixel's block, shape (height, width).
         split: Split of every kept labelled pixel; -1 for unlabelled,
           buffered-out, or unassigned pixels.
-        score: The worst ratio, over classes and splits, of a split's
-          share of a class to its target share. 1.0 is a perfect match.
+        covered: Classes with kept pixels in all three splits.
+        score: The worst ratio, over covered classes and splits, of a
+          split's share of a class to its target share. 1.0 is perfect.
+        kept: Share of labelled pixels that survive the buffer.
     """
 
     block_split: npt.NDArray[np.int8]
     split: npt.NDArray[np.int8]
+    covered: int
     score: float
+    kept: float
+
+    @property
+    def rank(self) -> tuple[int, float, float]:
+        """The search's sort key: coverage first, then balance, then kept."""
+        return (self.covered, self.score, self.kept)
 
 
 def _apply_buffer(
@@ -88,19 +101,24 @@ def _apply_buffer(
     return split
 
 
-def _balance_score(
+def _coverage_and_balance(
     split: npt.NDArray[np.int8],
     labels: npt.NDArray[np.int64],
     fractions: tuple[float, float, float],
     classes: npt.NDArray[np.int64],
-) -> float:
+) -> tuple[int, float]:
+    covered = 0
     worst = np.inf
     for cls in classes:
         total = np.count_nonzero(labels == cls)
-        for k, target in enumerate(fractions):
-            share = np.count_nonzero((split == k) & (labels == cls)) / total
-            worst = min(worst, share / target)
-    return float(worst)
+        shares = [
+            np.count_nonzero((split == k) & (labels == cls)) / total
+            for k in (TRAIN, VAL, TEST)
+        ]
+        if min(shares) > 0:
+            covered += 1
+            worst = min(worst, *(s / t for s, t in zip(shares, fractions, strict=True)))
+    return covered, float(worst) if covered else 0.0
 
 
 def block_split(
@@ -111,11 +129,12 @@ def block_split(
     seed: int = 0,
     tries: int = 2000,
 ) -> BlockSplit:
-    """Searches random block assignments for the best class balance.
+    """Searches random block assignments for the best class coverage.
 
     Each try deals the blocks that hold labelled pixels to the three splits
-    in proportion to fractions (by labelled pixels), applies the buffer,
-    and scores how well every class is shared out. The best try wins. The
+    in proportion to fractions (by labelled pixels) and applies the buffer.
+    Tries are ranked by how many classes reach all three splits, then by
+    how evenly those classes are shared out, then by pixels kept. The
     search sees labels only, never a model or a score.
 
     Args:
@@ -136,6 +155,7 @@ def block_split(
     )
     counts = np.bincount(block_id[labels >= 0], minlength=rows * cols)
     labelled_blocks = np.flatnonzero(counts)
+    n_labelled = int(counts.sum())
     classes = np.unique(labels[labels >= 0])
     edges = np.cumsum(fractions)[:-1] * counts.sum()
     rng = np.random.default_rng(seed)
@@ -148,9 +168,16 @@ def block_split(
         assignment[order] = np.searchsorted(edges, cumulative).astype(np.int8)
         block_map = assignment[block_id]
         split = _apply_buffer(block_map, labels, radius)
-        score = _balance_score(split, labels, fractions, classes)
-        if best is None or score > best.score:
-            best = BlockSplit(block_split=block_map, split=split, score=score)
+        covered, score = _coverage_and_balance(split, labels, fractions, classes)
+        candidate = BlockSplit(
+            block_split=block_map,
+            split=split,
+            covered=covered,
+            score=score,
+            kept=np.count_nonzero(split >= 0) / n_labelled,
+        )
+        if best is None or candidate.rank > best.rank:
+            best = candidate
     if best is None:
         raise ValueError(f"tries must be positive: {tries=}")
     return best

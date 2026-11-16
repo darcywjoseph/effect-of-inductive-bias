@@ -1,8 +1,7 @@
-dataset: indian_pines
+dataset: salinas
 data_root: data
 metric: balanced_acc
-# Block side and patch radius are provisional until the split check-in.
-data: {block: 16, patch_radius: 4, fractions: [0.6, 0.2, 0.2], split_seed: 0, tries: 2000}
+data: {block: 16, patch_radius: 2, fractions: [0.6, 0.2, 0.2], split_seed: 0, tries: 2000}
 grid: ["5pc", "10pc", "20pc", "50pc", "100pc", "200pc", "all"]
 anchors: ["5pc", "50pc", "all"]
 targets: {reference: {model: cnn, treatment: aug}, sizes: ["20pc", "100pc"]}

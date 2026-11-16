@@ -6,21 +6,24 @@ from pathlib import Path
 
 import torchaudio
 import torchvision
-import truststore
 
-# ehu.eus serves an incomplete chain; the OS trust store resolves it.
-truststore.inject_into_ssl()
-
+# Copies of the UPV/EHU "Hyperspectral Remote Sensing Scenes" files (sizes,
+# shapes and class counts match). The original host refuses scripts.
+_MIRROR = "https://huggingface.co/datasets/danaroth"
 HSI_URLS = {
-    "Indian_pines_corrected.mat": "https://www.ehu.eus/ccwintco/uploads/6/67/Indian_pines_corrected.mat",
-    "Indian_pines_gt.mat": "https://www.ehu.eus/ccwintco/uploads/c/c4/Indian_pines_gt.mat",
-    "PaviaU.mat": "https://www.ehu.eus/ccwintco/uploads/e/ee/PaviaU.mat",
-    "PaviaU_gt.mat": "https://www.ehu.eus/ccwintco/uploads/5/50/PaviaU_gt.mat",
+    "Salinas_corrected.mat": f"{_MIRROR}/salinas/resolve/main/Salinas_corrected.mat",
+    "Salinas_gt.mat": f"{_MIRROR}/salinas/resolve/main/Salinas_gt.mat",
+    "PaviaU.mat": f"{_MIRROR}/pavia/resolve/main/PaviaU.mat",
+    "PaviaU_gt.mat": f"{_MIRROR}/pavia/resolve/main/PaviaU_gt.mat",
 }
 
 
 def download_hsi(root: Path) -> None:
-    """Fetch the Indian Pines and Pavia University .mat files."""
+    """Fetches the Salinas and Pavia University .mat files.
+
+    Args:
+        root: Data root; files land in root/hsi.
+    """
     hsi_dir = root / "hsi"
     hsi_dir.mkdir(parents=True, exist_ok=True)
     for name, url in HSI_URLS.items():
