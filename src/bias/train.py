@@ -17,8 +17,8 @@ from typing import Any
 import numpy as np
 import torch
 
+from bias import augment, runlog
 from bias import config as config_lib
-from bias import runlog
 from bias.data import cifar, subsets
 from bias.models import registry
 
@@ -65,6 +65,10 @@ class TensorData:
         test_x: Test inputs.
         test_y: Test labels.
         num_classes: Number of classes.
+        pool_raw: Labelled pool before normalisation, on the CPU, as the
+          augmentation expects it (uint8 NCHW for images).
+        mean: Per-channel mean on the device, broadcastable to a batch.
+        std: Per-channel std on the device, broadcastable to a batch.
     """
 
     pool_x: torch.Tensor
@@ -74,6 +78,21 @@ class TensorData:
     test_x: torch.Tensor
     test_y: torch.Tensor
     num_classes: int
+    pool_raw: torch.Tensor
+    mean: torch.Tensor
+    std: torch.Tensor
+
+    def normalise(self, raw: torch.Tensor) -> torch.Tensor:
+        """Moves a raw batch to the device and normalises it.
+
+        Args:
+            raw: A batch shaped like pool_raw.
+
+        Returns:
+            Model-ready inputs.
+        """
+        x = raw.to(self.mean.device, non_blocking=True).float().div(255.0)
+        return (x - self.mean) / self.std
 
 
 def load_tensors(config: dict[str, Any], device: torch.device) -> TensorData:
@@ -113,6 +132,9 @@ def load_tensors(config: dict[str, Any], device: torch.device) -> TensorData:
         test_x=images(splits.test_x),
         test_y=labels(splits.test_y),
         num_classes=100,
+        pool_raw=torch.from_numpy(splits.pool_x).permute(0, 3, 1, 2).contiguous(),
+        mean=mean.to(device),
+        std=std.to(device),
     )
 
 
@@ -196,7 +218,7 @@ def train_run(
         config: Parsed config.
         data: Dataset tensors on the device.
         model_name: "cnn", "vit" or "mlp".
-        treatment: Only "none" is implemented so far.
+        treatment: "none" or "aug".
         size: Grid entry, such as "10%".
         seed: Seed for the subset, the init and the batch order.
         lr: Peak learning rate.
@@ -212,7 +234,7 @@ def train_run(
         ValueError: If the treatment is not implemented.
         FloatingPointError: If the loss diverges.
     """
-    if treatment != "none":
+    if treatment not in ("none", "aug"):
         raise ValueError(f"treatment not implemented yet: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
     index = torch.from_numpy(subset.indices).to(device)
@@ -228,17 +250,35 @@ def train_run(
     order = torch.randperm(len(index), generator=generator)
     cursor = 0
     best_val, best_state = -1.0, copy.deepcopy(model.state_dict())
+    augmented = None
+    if treatment == "aug":
+        augmented = augment.augmented_batches(
+            data.pool_raw[torch.from_numpy(subset.indices)],
+            data.pool_y.cpu()[torch.from_numpy(subset.indices)],
+            augment.cifar_transform(),
+            batch,
+            total,
+            seed,
+            config.get("workers", 8),
+        )
+    bf16 = config.get("precision", "fp32") == "bf16"
 
     started = time.perf_counter()
     for step in range(total):
-        if cursor + batch > len(order):
-            order = torch.randperm(len(index), generator=generator)
-            cursor = 0
-        take = order[cursor : cursor + batch].to(device)
-        cursor += batch
+        if augmented is not None:
+            raw, labels = next(augmented)
+            xb, yb = data.normalise(raw), labels.to(device, non_blocking=True)
+        else:
+            if cursor + batch > len(order):
+                order = torch.randperm(len(index), generator=generator)
+                cursor = 0
+            take = order[cursor : cursor + batch].to(device)
+            cursor += batch
+            xb, yb = x[take], y[take]
         for group in optimiser.param_groups:
             group["lr"] = lr_at(step, total, lr, config["optimiser"]["warmup_frac"])
-        loss = torch.nn.functional.cross_entropy(model(x[take]), y[take])
+        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bf16):
+            loss = torch.nn.functional.cross_entropy(model(xb), yb)
         optimiser.zero_grad(set_to_none=True)
         loss.backward()  # type: ignore[no-untyped-call]
         optimiser.step()
@@ -270,6 +310,7 @@ def train_run(
         gpu=device_name(device),
         wall_seconds=wall,
         stage=stage,
+        precision="bf16" if bf16 else "fp32",
     )
 
 

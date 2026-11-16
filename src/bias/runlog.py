@@ -26,6 +26,7 @@ class RunRecord:
         gpu: Device name.
         wall_seconds: Wall-clock training time.
         stage: "pilot", "tune" for sweep runs, or "final" for reported runs.
+        precision: "fp32" or "bf16" (autocast).
     """
 
     dataset: str
@@ -44,6 +45,7 @@ class RunRecord:
     gpu: str
     wall_seconds: float
     stage: str
+    precision: str
 
 
 FIELDS = [field.name for field in dataclasses.fields(RunRecord)]

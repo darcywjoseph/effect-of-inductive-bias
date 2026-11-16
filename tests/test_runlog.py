@@ -23,6 +23,7 @@ RECORD = runlog.RunRecord(
     gpu="mps",
     wall_seconds=60.0,
     stage="final",
+    precision="bf16",
 )
 
 
