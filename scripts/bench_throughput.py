@@ -8,6 +8,13 @@ from bias import train
 from bias.models import registry
 
 
+def _sync(dev: torch.device) -> None:
+    if dev.type == "cuda":
+        torch.cuda.synchronize()
+    elif dev.type == "mps":
+        torch.mps.synchronize()
+
+
 def _rate(name: str, bf16: bool, dev: torch.device, steps: int = 100) -> float:
     x = torch.randn(128, 3, 32, 32, device=dev)
     y = torch.randint(0, 100, (128,), device=dev)
@@ -16,14 +23,14 @@ def _rate(name: str, bf16: bool, dev: torch.device, steps: int = 100) -> float:
     start = 0.0
     for i in range(steps + 10):
         if i == 10:
-            torch.mps.synchronize()
+            _sync(dev)
             start = time.perf_counter()
         with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=bf16):
             loss = torch.nn.functional.cross_entropy(model(x), y)
         opt.zero_grad()
         loss.backward()  # type: ignore[no-untyped-call]
         opt.step()
-    torch.mps.synchronize()
+    _sync(dev)
     return steps / (time.perf_counter() - start)
 
 
