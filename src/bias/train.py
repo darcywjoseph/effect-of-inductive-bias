@@ -196,6 +196,14 @@ def lr_at(step: int, total: int, peak: float, warmup_frac: float) -> float:
     return peak * 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
+def _load_backbone(model: torch.nn.Module, path: Path) -> None:
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    result = model.load_state_dict(state, strict=False)
+    head = {"fc.weight", "fc.bias", "head.weight", "head.bias"}
+    if result.unexpected_keys or not set(result.missing_keys) <= head:
+        raise ValueError(f"checkpoint does not fit the model: {result}")
+
+
 def train_run(
     config: dict[str, Any],
     data: TensorData,
@@ -218,8 +226,9 @@ def train_run(
         config: Parsed config.
         data: Dataset tensors on the device.
         model_name: "cnn", "vit" or "mlp".
-        treatment: "none", "aug", or "imagenet" (ViT from ImageNet
-          weights, fine-tuned with augmentation).
+        treatment: "none", "aug", "imagenet" (ViT from ImageNet weights)
+          or "lejepa" (from this seed's LeJEPA backbone). The last two
+          fine-tune the whole network with augmentation.
         size: Grid entry, such as "10%".
         seed: Seed for the subset, the init and the batch order.
         lr: Peak learning rate.
@@ -235,7 +244,7 @@ def train_run(
         ValueError: If the treatment is not implemented.
         FloatingPointError: If the loss diverges.
     """
-    if treatment not in ("none", "aug", "imagenet"):
+    if treatment not in ("none", "aug", "imagenet", "lejepa"):
         raise ValueError(f"treatment not implemented yet: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
     index = torch.from_numpy(subset.indices).to(device)
@@ -247,14 +256,17 @@ def train_run(
     torch.manual_seed(seed)
     model = registry.build(
         model_name, config["dataset"], pretrained=treatment == "imagenet"
-    ).to(device)
+    )
+    if treatment == "lejepa":
+        _load_backbone(model, config_lib.lejepa_checkpoint(config, model_name, seed))
+    model = model.to(device)
     optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     generator = torch.Generator(device="cpu").manual_seed(seed)
     order = torch.randperm(len(index), generator=generator)
     cursor = 0
     best_val, best_state = -1.0, copy.deepcopy(model.state_dict())
     augmented = None
-    if treatment in ("aug", "imagenet"):
+    if treatment in ("aug", "imagenet", "lejepa"):
         augmented = augment.augmented_batches(
             data.pool_raw[torch.from_numpy(subset.indices)],
             data.pool_y.cpu()[torch.from_numpy(subset.indices)],

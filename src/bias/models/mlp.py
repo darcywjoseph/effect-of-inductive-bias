@@ -49,7 +49,20 @@ class MLP(torch.nn.Module):
             *[_Block(width, expansion) for _ in range(depth)]
         )
         self.norm = torch.nn.LayerNorm(width)
-        self.head = torch.nn.Linear(width, num_classes)
+        self.num_features = width
+        self.head: torch.nn.Module = torch.nn.Linear(width, num_classes)
+
+    def reset_classifier(self, num_classes: int) -> None:
+        """Replaces the head, as timm models do; 0 removes it.
+
+        Args:
+            num_classes: New output classes, or 0 to output features.
+        """
+        self.head = (
+            torch.nn.Linear(self.num_features, num_classes)
+            if num_classes
+            else torch.nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classifies a batch.

@@ -25,3 +25,18 @@ def load_config(path: Path) -> dict[str, Any]:
     if missing:
         raise ValueError(f"{path} is missing keys: {sorted(missing)}")
     return config
+
+
+def lejepa_checkpoint(config: dict[str, Any], model_name: str, seed: int) -> Path:
+    """Returns where a LeJEPA-pretrained backbone is stored.
+
+    Args:
+        config: Parsed config with a lejepa section.
+        model_name: "cnn", "vit" or "mlp".
+        seed: Pretraining seed.
+
+    Returns:
+        The .pt path.
+    """
+    root = Path(config["lejepa"]["checkpoint_dir"])
+    return root / f"{config['dataset']}_{model_name}_s{seed}.pt"

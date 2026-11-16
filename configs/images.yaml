@@ -20,3 +20,17 @@ models: [cnn, vit, mlp]
 treatments: [none, aug, lejepa, imagenet]
 bootstrap: {draws: 10000, level: 0.95}
 results_csv: results/runs.csv
+# LeJEPA pretraining on the whole pool, labels removed. One backbone per
+# model and seed, reused at every data size. Values follow the authors'
+# minimal reference (MINIMAL.md) and README; wd per model as the README says.
+lejepa:
+  epochs: 200
+  batch: 256
+  views: 4
+  lam: 0.02
+  proj_dim: 16
+  slices: 256
+  lr: 2.0e-3
+  warmup_frac: 0.05
+  weight_decay: {cnn: 5.0e-4, vit: 0.05, mlp: 0.05}
+  checkpoint_dir: checkpoints/lejepa
