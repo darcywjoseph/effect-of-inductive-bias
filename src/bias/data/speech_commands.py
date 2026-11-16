@@ -146,3 +146,100 @@ class LogMel(torch.nn.Module):
         """
         mel: torch.Tensor = self.mel(waves)
         return torch.log(mel + 1e-6).unsqueeze(1)
+
+
+class WaveAugment:
+    """Time shift and background-noise mixing for one waveform.
+
+    This is the dataset's own recipe (Warden, 2018, and the TensorFlow
+    speech-commands example): shift by up to 100 ms with zero fill, then,
+    with some probability, add a random stretch of a background-noise
+    recording at a random volume. It is a class so DataLoader workers can
+    pickle it.
+    """
+
+    def __init__(
+        self,
+        noise: list[npt.NDArray[np.float32]],
+        shift_ms: int = 100,
+        noise_prob: float = 0.8,
+        noise_max: float = 0.1,
+    ) -> None:
+        """Stores the noise recordings and settings.
+
+        Args:
+            noise: Background-noise waveforms in [-1, 1].
+            shift_ms: Largest shift either way, in milliseconds.
+            noise_prob: Chance of mixing in noise.
+            noise_max: Largest noise volume; the volume is uniform below it.
+        """
+        self.noise = [torch.from_numpy(n) for n in noise if len(n) >= SAMPLE_RATE]
+        self.shift = SAMPLE_RATE * shift_ms // 1000
+        self.noise_prob = noise_prob
+        self.noise_max = noise_max
+
+    def __call__(self, wave: torch.Tensor) -> torch.Tensor:
+        """Augments one int16 clip.
+
+        Args:
+            wave: Shape (16000,), int16.
+
+        Returns:
+            Float waveform in [-1, 1], shape (16000,).
+        """
+        x = wave.float() / 32768.0
+        shift = int(torch.randint(-self.shift, self.shift + 1, ()))
+        x = torch.roll(x, shift)
+        if shift > 0:
+            x[:shift] = 0
+        elif shift < 0:
+            x[shift:] = 0
+        if self.noise and float(torch.rand(())) < self.noise_prob:
+            clip = self.noise[int(torch.randint(len(self.noise), ()))]
+            start = int(torch.randint(len(clip) - SAMPLE_RATE + 1, ()))
+            volume = float(torch.rand(())) * self.noise_max
+            x = x + volume * clip[start : start + SAMPLE_RATE]
+        return x.clamp(-1.0, 1.0)
+
+
+class SpecAugment(torch.nn.Module):
+    """Frequency and time masking of a batch of log-mels (Park et al., 2019).
+
+    Every example gets its own masks. Masked cells are set to 0, which is
+    the mean after normalisation.
+    """
+
+    def __init__(
+        self, freq_masks: int, freq_width: int, time_masks: int, time_width: int
+    ) -> None:
+        """Stores the mask counts and largest widths.
+
+        Args:
+            freq_masks: Frequency masks per example.
+            freq_width: Largest frequency mask, in mel bins.
+            time_masks: Time masks per example.
+            time_width: Largest time mask, in frames.
+        """
+        super().__init__()
+        self.freq = (freq_masks, freq_width)
+        self.time = (time_masks, time_width)
+
+    def _mask(self, n: int, size: int, count: int, width: int, device: torch.device) -> torch.Tensor:
+        widths = torch.randint(0, width + 1, (n, count, 1), device=device)
+        starts = (torch.rand(n, count, 1, device=device) * (size - widths + 1)).long()
+        cells = torch.arange(size, device=device).view(1, 1, size)
+        return ((cells >= starts) & (cells < starts + widths)).any(1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Masks a batch.
+
+        Args:
+            x: Log-mels of shape (batch, 1, mels, frames).
+
+        Returns:
+            The masked batch, same shape.
+        """
+        n, _, mels, frames = x.shape
+        freq = self._mask(n, mels, *self.freq, x.device).view(n, 1, mels, 1)
+        time = self._mask(n, frames, *self.time, x.device).view(n, 1, 1, frames)
+        return x.masked_fill(freq | time, 0.0)

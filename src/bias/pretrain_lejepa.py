@@ -8,9 +8,9 @@ stop-gradient. This follows the authors' minimal reference
 output, 256 random slices redrawn each step, a 17-knot Epps-Pulley test on
 [-3, 3], and the mean over all views as the prediction target.
 
-The authors give no recipe for 32x32 images, so the view augmentation is
-the README's colour recipe on a 32-pixel random resized crop, without
-Gaussian blur, as is usual for CIFAR-sized self-supervision.
+Each dataset supplies its own view transform (TensorData.ssl_view); see
+augment.cifar_ssl_view for images. Batch-level augmentation, such as
+SpecAugment for audio, is applied to every view as well.
 
 Usage:
     python -m bias.pretrain_lejepa configs/images.yaml --model vit --seed 0
@@ -27,34 +27,18 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 import torch.utils.data
 from torchvision.ops import MLP
-from torchvision.transforms import v2
 
 from bias import augment, train
 from bias import config as config_lib
+from bias.data import tensors
 from bias.models import registry
 
 
-def view_transform() -> augment.Transform:
-    """Returns the augmentation for one LeJEPA view of a uint8 image.
-
-    Returns:
-        A transform from uint8 (3, 32, 32) to uint8 (3, 32, 32).
-    """
-    transform: augment.Transform = v2.Compose(
-        [
-            v2.RandomResizedCrop(32, scale=(0.08, 1.0), antialias=True),
-            v2.RandomHorizontalFlip(),
-            v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
-            v2.RandomGrayscale(p=0.2),
-            v2.RandomSolarize(threshold=128, p=0.2),
-        ]
-    )
-    return transform
-
-
 class _Views(torch.utils.data.Dataset[torch.Tensor]):
-    def __init__(self, x: torch.Tensor, views: int) -> None:
-        self.x, self.views, self.transform = x, views, view_transform()
+    def __init__(
+        self, x: torch.Tensor, views: int, transform: augment.Transform
+    ) -> None:
+        self.x, self.views, self.transform = x, views, transform
 
     def __len__(self) -> int:
         return len(self.x)
@@ -132,7 +116,9 @@ def _features(model: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
     return F.normalize(out.float(), dim=1)
 
 
-def knn_accuracy(model: torch.nn.Module, data: train.TensorData, k: int = 20) -> float:
+def knn_accuracy(
+    model: torch.nn.Module, data: tensors.TensorData, k: int = 20
+) -> float:
     """Returns k-nearest-neighbour validation accuracy of frozen features.
 
     A diagnostic only: it reads pool labels after pretraining is over, and
@@ -159,7 +145,7 @@ def knn_accuracy(model: torch.nn.Module, data: train.TensorData, k: int = 20) ->
 
 def pretrain(
     config: dict[str, Any],
-    data: train.TensorData,
+    data: tensors.TensorData,
     model_name: str,
     seed: int,
     device: torch.device,
@@ -196,7 +182,7 @@ def pretrain(
     optimiser = torch.optim.AdamW(params, lr=cfg["lr"], weight_decay=weight_decay)
     workers = config.get("workers", 8)
     loader = torch.utils.data.DataLoader(
-        _Views(data.pool_raw, cfg["views"]),
+        _Views(data.pool_raw, cfg["views"], data.ssl_view),
         batch_size=batch,
         sampler=augment._EpochSampler(len(data.pool_raw), total * batch, seed),
         num_workers=workers,
@@ -211,7 +197,7 @@ def pretrain(
     started = time.perf_counter()
     for step, raw in enumerate(loader):
         views = raw.shape[1]
-        x = data.normalise(raw.flatten(0, 1))
+        x = data.augment_batch(data.prepare(raw.flatten(0, 1)))
         for group in optimiser.param_groups:
             group["lr"] = train.lr_at(step, total, cfg["lr"], cfg["warmup_frac"])
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bf16):
@@ -267,7 +253,7 @@ def main() -> None:
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
     device = train.pick_device()
-    data = train.load_tensors(config, device)
+    data = tensors.load_tensors(config, device)
     summary = pretrain(config, data, args.model, args.seed, device, args.max_steps)
     print({k: v for k, v in summary.items() if k != "history"})
 

@@ -14,6 +14,7 @@ import numpy as np
 import numpy.typing as npt
 import scipy.io
 import scipy.ndimage
+import torch
 
 TRAIN, VAL, TEST = 0, 1, 2
 SPLIT_NAMES = ("train", "val", "test")
@@ -254,3 +255,35 @@ def extract_patches(
         cols[:, None, None] + offsets[None, None, :],
     ]
     return np.ascontiguousarray(patches.transpose(0, 3, 1, 2))
+
+
+class PatchAugment:
+    """Flips, 90-degree rotations and small spectral noise for one patch.
+
+    A class so DataLoader workers can pickle it.
+    """
+
+    def __init__(self, noise_std: float) -> None:
+        """Stores the noise level.
+
+        Args:
+            noise_std: Std of Gaussian noise added to every value, in units
+              of each band's training std (inputs are standardised).
+        """
+        self.noise_std = noise_std
+
+    def __call__(self, patch: torch.Tensor) -> torch.Tensor:
+        """Augments one patch.
+
+        Args:
+            patch: Standardised patch of shape (bands, side, side).
+
+        Returns:
+            The augmented patch, same shape.
+        """
+        if float(torch.rand(())) < 0.5:
+            patch = patch.flip(-1)
+        if float(torch.rand(())) < 0.5:
+            patch = patch.flip(-2)
+        patch = torch.rot90(patch, int(torch.randint(4, ())), dims=(-2, -1))
+        return patch + self.noise_std * torch.randn_like(patch)

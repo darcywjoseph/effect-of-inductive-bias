@@ -1,6 +1,6 @@
 import torch
 
-from bias import pretrain_lejepa
+from bias import augment, pretrain_lejepa
 
 
 def test_sigreg_is_small_for_gaussian_and_large_for_collapse() -> None:
@@ -21,6 +21,6 @@ def test_prediction_term_is_zero_when_views_agree() -> None:
 
 def test_view_transform_keeps_shape_and_dtype() -> None:
     image = torch.randint(0, 256, (3, 32, 32), dtype=torch.uint8)
-    out = pretrain_lejepa.view_transform()(image)
+    out = augment.cifar_ssl_view()(image)
     assert out.shape == (3, 32, 32)
     assert out.dtype == torch.uint8

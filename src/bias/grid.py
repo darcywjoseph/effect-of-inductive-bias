@@ -25,6 +25,7 @@ import pandas as pd
 
 from bias import config as config_lib
 from bias import pretrain_lejepa, runlog, train
+from bias.data import tensors
 
 
 @dataclasses.dataclass(frozen=True)
@@ -173,7 +174,7 @@ def main() -> None:
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
     device = train.pick_device()
-    data = train.load_tensors(config, device)
+    data = tensors.load_tensors(config, device)
     logs = Path(config["results_dir"])
     log_glob = str(logs / f"{config['dataset']}_*.csv")
 

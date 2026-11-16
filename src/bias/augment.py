@@ -29,6 +29,28 @@ def cifar_transform() -> Transform:
     return transform
 
 
+def cifar_ssl_view() -> Transform:
+    """Returns the LeJEPA view transform for one uint8 (3, 32, 32) image.
+
+    The LeJEPA authors give no recipe for 32x32 images, so this is their
+    README's colour recipe on a 32-pixel random resized crop, without
+    Gaussian blur, as is usual for CIFAR-sized self-supervision.
+
+    Returns:
+        A transform from uint8 image to uint8 image.
+    """
+    transform: Transform = v2.Compose(
+        [
+            v2.RandomResizedCrop(32, scale=(0.08, 1.0), antialias=True),
+            v2.RandomHorizontalFlip(),
+            v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
+            v2.RandomGrayscale(p=0.2),
+            v2.RandomSolarize(threshold=128, p=0.2),
+        ]
+    )
+    return transform
+
+
 class _Augmented(torch.utils.data.Dataset[tuple[torch.Tensor, torch.Tensor]]):
     def __init__(self, x: torch.Tensor, y: torch.Tensor, transform: Transform) -> None:
         self.x, self.y, self.transform = x, y, transform

@@ -1,7 +1,15 @@
 dataset: speech_commands_v2
 data_root: data
 metric: top1
-data: {n_mels: 40, win_ms: 30, hop_ms: 10}
+data:
+  n_mels: 40
+  win_ms: 30
+  hop_ms: 10
+  frames: 100  # of 101; a whole number of 4-frame ViT patches
+  # The dataset's own noise recipe (TensorFlow speech-commands example).
+  wave_augment: {shift_ms: 100, noise_prob: 0.8, noise_max: 0.1}
+  # SpecAugment masks sized for 40 mels x 100 frames.
+  spec_augment: {freq_masks: 2, freq_width: 7, time_masks: 2, time_width: 20}
 grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
 anchors: ["1%", "10%", "100%"]
 targets: {reference: {model: cnn, treatment: aug}, sizes: ["10%", "50%"]}
@@ -29,3 +37,17 @@ configurations:
   - [mlp, lejepa]
 bootstrap: {draws: 10000, level: 0.95}
 results_dir: results
+# LeJEPA pretraining on the whole pool, labels removed. Batch 128 (the
+# paper's suggested minimum): 1,024 views of 251 ViT tokens do not fit in
+# 32 GB. 100 epochs of the 84,843-clip pool is about 66k steps.
+lejepa:
+  epochs: 100
+  batch: 128
+  views: 4
+  lam: 0.02
+  proj_dim: 16
+  slices: 256
+  lr: 2.0e-3
+  warmup_frac: 0.05
+  weight_decay: {cnn: 5.0e-4, vit: 0.05, mlp: 0.05}
+  checkpoint_dir: checkpoints/lejepa

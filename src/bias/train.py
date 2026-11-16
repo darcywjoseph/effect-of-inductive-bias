@@ -7,23 +7,18 @@ Usage:
 
 import argparse
 import copy
-import dataclasses
 import math
 import platform
 import time
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import torch
 
 from bias import augment, runlog
 from bias import config as config_lib
-from bias.data import cifar, subsets
+from bias.data import subsets, tensors
 from bias.models import registry
-
-CIFAR_MEAN = (0.5071, 0.4865, 0.4409)
-CIFAR_STD = (0.2673, 0.2564, 0.2762)
 
 
 def pick_device() -> torch.device:
@@ -53,91 +48,6 @@ def device_name(device: torch.device) -> str:
     return f"{device.type}:{platform.processor() or platform.machine()}"
 
 
-@dataclasses.dataclass(frozen=True)
-class TensorData:
-    """Model-ready tensors for one dataset, already on the device.
-
-    Attributes:
-        pool_x: Labelled pool inputs.
-        pool_y: Labelled pool labels.
-        val_x: Validation inputs.
-        val_y: Validation labels.
-        test_x: Test inputs.
-        test_y: Test labels.
-        num_classes: Number of classes.
-        pool_raw: Labelled pool before normalisation, on the CPU, as the
-          augmentation expects it (uint8 NCHW for images).
-        mean: Per-channel mean on the device, broadcastable to a batch.
-        std: Per-channel std on the device, broadcastable to a batch.
-    """
-
-    pool_x: torch.Tensor
-    pool_y: torch.Tensor
-    val_x: torch.Tensor
-    val_y: torch.Tensor
-    test_x: torch.Tensor
-    test_y: torch.Tensor
-    num_classes: int
-    pool_raw: torch.Tensor
-    mean: torch.Tensor
-    std: torch.Tensor
-
-    def normalise(self, raw: torch.Tensor) -> torch.Tensor:
-        """Moves a raw batch to the device and normalises it.
-
-        Args:
-            raw: A batch shaped like pool_raw.
-
-        Returns:
-            Model-ready inputs.
-        """
-        x = raw.to(self.mean.device, non_blocking=True).float().div(255.0)
-        return (x - self.mean) / self.std
-
-
-def load_tensors(config: dict[str, Any], device: torch.device) -> TensorData:
-    """Loads a dataset and normalises it onto the device.
-
-    Args:
-        config: Parsed config.
-        device: Where the tensors live.
-
-    Returns:
-        The dataset as tensors.
-
-    Raises:
-        ValueError: If the dataset has no loader yet.
-    """
-    if config["dataset"] != "cifar100":
-        raise ValueError(f"no tensor loader for {config['dataset']=}")
-    data = config["data"]
-    splits = cifar.load(
-        Path(config["data_root"]), data["val_per_class"], data["split_seed"]
-    )
-    mean = torch.tensor(CIFAR_MEAN).view(1, 3, 1, 1)
-    std = torch.tensor(CIFAR_STD).view(1, 3, 1, 1)
-
-    def images(x: np.ndarray[Any, Any]) -> torch.Tensor:
-        t = torch.from_numpy(x).permute(0, 3, 1, 2).float().div(255.0)
-        return ((t - mean) / std).to(device)
-
-    def labels(y: np.ndarray[Any, Any]) -> torch.Tensor:
-        return torch.from_numpy(y).to(device)
-
-    return TensorData(
-        pool_x=images(splits.pool_x),
-        pool_y=labels(splits.pool_y),
-        val_x=images(splits.val_x),
-        val_y=labels(splits.val_y),
-        test_x=images(splits.test_x),
-        test_y=labels(splits.test_y),
-        num_classes=100,
-        pool_raw=torch.from_numpy(splits.pool_x).permute(0, 3, 1, 2).contiguous(),
-        mean=mean.to(device),
-        std=std.to(device),
-    )
-
-
 def step_budget(n_labelled: int, config: dict[str, Any]) -> int:
     """Returns the optimisation steps for a subset size.
 
@@ -155,26 +65,41 @@ def step_budget(n_labelled: int, config: dict[str, Any]) -> int:
 
 @torch.no_grad()
 def accuracy(
-    model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor, batch: int = 1000
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    batch: int = 1000,
+    bf16: bool = False,
+    metric: str = "top1",
 ) -> float:
-    """Returns top-1 accuracy of the model on a labelled set.
+    """Returns the model's score on a labelled set.
 
     Args:
         model: Classifier.
         x: Inputs.
         y: Labels.
         batch: Evaluation batch size.
+        bf16: Run the forward pass under bf16 autocast, as in training.
+        metric: "top1" accuracy, or "balanced_acc", the mean of per-class
+          recall over the classes present in y.
 
     Returns:
-        Fraction of correct predictions.
+        The score, in [0, 1].
     """
     model.eval()
-    correct = 0
+    predictions = []
     for start in range(0, len(x), batch):
-        logits = model(x[start : start + batch])
-        correct += int((logits.argmax(1) == y[start : start + batch]).sum())
+        with torch.autocast(x.device.type, dtype=torch.bfloat16, enabled=bf16):
+            predictions.append(model(x[start : start + batch]).argmax(1))
     model.train()
-    return correct / len(x)
+    predicted = torch.cat(predictions)
+    hits = (predicted == y).float()
+    if metric == "top1":
+        return float(hits.mean())
+    if metric == "balanced_acc":
+        classes = torch.unique(y)
+        return float(torch.stack([hits[y == c].mean() for c in classes]).mean())
+    raise ValueError(f"unknown metric: {metric=}")
 
 
 def lr_at(step: int, total: int, peak: float, warmup_frac: float) -> float:
@@ -206,7 +131,7 @@ def _load_backbone(model: torch.nn.Module, path: Path) -> None:
 
 def train_run(
     config: dict[str, Any],
-    data: TensorData,
+    data: tensors.TensorData,
     model_name: str,
     treatment: str,
     size: str,
@@ -270,7 +195,7 @@ def train_run(
         augmented = augment.augmented_batches(
             data.pool_raw[torch.from_numpy(subset.indices)],
             data.pool_y.cpu()[torch.from_numpy(subset.indices)],
-            augment.cifar_transform(),
+            data.augment_example,
             batch,
             total,
             seed,
@@ -282,7 +207,8 @@ def train_run(
     for step in range(total):
         if augmented is not None:
             raw, labels = next(augmented)
-            xb, yb = data.normalise(raw), labels.to(device, non_blocking=True)
+            xb = data.augment_batch(data.prepare(raw))
+            yb = labels.to(device, non_blocking=True)
         else:
             if cursor + batch > len(order):
                 order = torch.randperm(len(index), generator=generator)
@@ -300,7 +226,9 @@ def train_run(
         if (step + 1) % eval_every == 0 or step + 1 == total:
             if not math.isfinite(loss.item()):
                 raise FloatingPointError(f"loss diverged at step {step}: {loss.item()}")
-            val = accuracy(model, data.val_x, data.val_y)
+            val = accuracy(
+                model, data.val_x, data.val_y, bf16=bf16, metric=config["metric"]
+            )
             if val > best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
     if device.type == "mps":
@@ -319,7 +247,9 @@ def train_run(
         weight_decay=weight_decay,
         steps=total,
         best_val=best_val,
-        test=accuracy(model, data.test_x, data.test_y),
+        test=accuracy(
+            model, data.test_x, data.test_y, bf16=bf16, metric=config["metric"]
+        ),
         metric=config["metric"],
         n_params=registry.count_params(model),
         gpu=device_name(device),
@@ -345,7 +275,7 @@ def main() -> None:
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
     device = pick_device()
-    data = load_tensors(config, device)
+    data = tensors.load_tensors(config, device)
     record = train_run(
         config,
         data,
