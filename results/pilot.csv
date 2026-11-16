@@ -1,0 +1,7 @@
+dataset,model,treatment,size,n_labelled,seed,lr,weight_decay,steps,best_val,test,metric,n_params,gpu,wall_seconds,stage
+cifar100,cnn,none,1%,500,0,0.001,0.05,2000,0.0902,0.0873,top1,11220132,mps:arm,364.7114282499824,pilot
+cifar100,vit,none,1%,500,0,0.001,0.05,2000,0.0708,0.0674,top1,5380132,mps:arm,361.5435228749993,pilot
+cifar100,cnn,none,10%,4500,0,0.001,0.05,7032,0.1964,0.1991,top1,11220132,mps:arm,1211.161059459002,pilot
+cifar100,vit,none,10%,4500,0,0.001,0.05,7032,0.1752,0.1822,top1,5380132,mps:arm,1147.4544468749955,pilot
+cifar100,cnn,none,100%,45000,0,0.001,0.05,40000,0.5348,0.5355,top1,11220132,mps:arm,6757.194207916997,pilot
+cifar100,vit,none,100%,45000,0,0.001,0.05,40000,0.4782,0.4859,top1,5380132,mps:arm,6640.204652457993,pilot
