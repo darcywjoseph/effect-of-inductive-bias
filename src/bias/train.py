@@ -360,7 +360,8 @@ def main() -> None:
         args.max_steps,
     )
     print(record)
-    runlog.append_run(args.log or Path(config["results_csv"]), record)
+    default = Path(config["results_dir"]) / f"{config['dataset']}_manual.csv"
+    runlog.append_run(args.log or default, record)
 
 
 if __name__ == "__main__":
