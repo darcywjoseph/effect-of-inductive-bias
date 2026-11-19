@@ -13,6 +13,8 @@ workers: 8  # CPU augmentation workers
 steps: {epochs_equivalent: 200, min: 2000, max: 40000, evals: 20}
 sweep:
   lr: [1.0e-4, 3.0e-4, 1.0e-3]
+  # Rungs past the grid, tried only where the best lr sits at an edge.
+  lr_ladder: [1.0e-5, 3.0e-5, 1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2]
   weight_decay: [0.05, 0.1]
   seed: 0
 # The brief's nine configurations plus CNN + LeJEPA (its optional tenth).

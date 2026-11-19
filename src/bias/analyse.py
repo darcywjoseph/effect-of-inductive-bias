@@ -5,7 +5,12 @@ study gets a point estimate of E and a seed-bootstrap interval. Targets
 are the seed-mean test scores of the CNN with augmentation at the sizes
 fixed in the config. Where a comparison needs "the ViT with its best
 treatment", best means the highest seed-mean validation score averaged
-over the grid, so the test set chooses nothing.
+over the grid, so the test set chooses nothing; it is chosen twice, once
+over every treatment and once over those that use no outside data.
+
+Only final runs with the settings the tuning sweep now picks are used. A
+run made before the sweep's learning-rate ladder moved a setup's choice
+stays in the log but drops out here.
 
 Usage:
     python -m bias.analyse configs/images.yaml
@@ -24,6 +29,7 @@ import pandas as pd
 
 from bias import config as config_lib
 from bias import exchange_rate
+from bias import grid as grid_runner
 
 Setup = tuple[str, str]
 
@@ -44,6 +50,9 @@ class Comparison:
 
 
 BEST_VIT = ("vit", "best")
+BEST_VIT_IN_DOMAIN = ("vit", "best in-domain")
+# Treatments that bring in labelled outside data (ImageNet).
+OUTSIDE_DATA = frozenset({"imagenet", "imagenet1k"})
 
 COMPARISONS = [
     Comparison("CNN bias vs ViT, no aug", ("vit", "none"), ("cnn", "none")),
@@ -56,9 +65,17 @@ COMPARISONS = [
     Comparison("Self-supervision, ViT", ("vit", "aug"), ("vit", "lejepa")),
     Comparison("Self-supervision, MLP", ("mlp", "aug"), ("mlp", "lejepa")),
     Comparison("Self-supervision, CNN", ("cnn", "aug"), ("cnn", "lejepa")),
-    Comparison("Pretrained start, ViT", ("vit", "aug"), ("vit", "imagenet")),
+    Comparison("Pretrained start (IN-21k), ViT", ("vit", "aug"), ("vit", "imagenet")),
+    Comparison("Pretrained start (IN-1k), ViT", ("vit", "aug"), ("vit", "imagenet1k")),
+    Comparison("Pretrained start (IN-1k), CNN", ("cnn", "aug"), ("cnn", "imagenet1k")),
     Comparison("CNN lead left over best ViT", BEST_VIT, ("cnn", "aug")),
+    Comparison("CNN lead over best in-domain ViT", BEST_VIT_IN_DOMAIN, ("cnn", "aug")),
     Comparison("CNN bias with LeJEPA for both", ("vit", "lejepa"), ("cnn", "lejepa")),
+    Comparison(
+        "CNN bias with IN-1k start for both",
+        ("vit", "imagenet1k"),
+        ("cnn", "imagenet1k"),
+    ),
 ]
 
 
@@ -77,8 +94,16 @@ class Curve:
     val: npt.NDArray[np.float64]
 
 
+def _read(config: dict[str, Any], stage: str) -> pd.DataFrame:
+    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_{stage}_*.csv")
+    frames = [pd.read_csv(path) for path in sorted(glob.glob(pattern))]
+    if not frames:
+        raise ValueError(f"no {stage} runs match {pattern}")
+    return pd.concat(frames, ignore_index=True)
+
+
 def load_finals(config: dict[str, Any]) -> pd.DataFrame:
-    """Reads every final run of the config's dataset.
+    """Reads the final runs that use the sweep's current choice of settings.
 
     Args:
         config: Parsed config.
@@ -89,11 +114,24 @@ def load_finals(config: dict[str, Any]) -> pd.DataFrame:
     Raises:
         ValueError: If there are no final runs, or a run appears twice.
     """
-    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_final_*.csv")
-    frames = [pd.read_csv(path) for path in sorted(glob.glob(pattern))]
-    if not frames:
-        raise ValueError(f"no final runs match {pattern}")
-    rows = pd.concat(frames, ignore_index=True)
+    rows = _read(config, "final")
+    wanted = {
+        (j.model, j.treatment, j.size, j.seed, j.lr, j.weight_decay)
+        for j in grid_runner.final_jobs(config, _read(config, "tune"))
+    }
+    current = [
+        (
+            r["model"],
+            r["treatment"],
+            r["size"],
+            int(r["seed"]),
+            r["lr"],
+            r["weight_decay"],
+        )
+        in wanted
+        for r in rows.to_dict("records")
+    ]
+    rows = rows[current].reset_index(drop=True)
     key = ["model", "treatment", "size", "seed"]
     if rows.duplicated(key).any():
         raise ValueError(f"duplicate final runs:\n{rows[rows.duplicated(key)]}")
@@ -128,17 +166,20 @@ def curve(rows: pd.DataFrame, setup: Setup, grid: list[str]) -> Curve:
     )
 
 
-def best_vit(rows: pd.DataFrame, grid: list[str]) -> Setup:
+def best_vit(rows: pd.DataFrame, grid: list[str], in_domain: bool = False) -> Setup:
     """Returns the ViT setup with the best mean validation score.
 
     Args:
         rows: Final runs.
         grid: The config's grid.
+        in_domain: Only consider treatments without outside data.
 
     Returns:
         (model, treatment) of the ViT treatment chosen by validation.
     """
     treatments = sorted(set(rows[rows.model == "vit"].treatment))
+    if in_domain:
+        treatments = [t for t in treatments if t not in OUTSIDE_DATA]
     return max(
         (("vit", t) for t in treatments),
         key=lambda setup: float(curve(rows, setup, grid).val.mean()),
@@ -175,11 +216,14 @@ def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
     grid = config["grid"]
     boot = config["bootstrap"]
     setups = set(zip(rows.model, rows.treatment, strict=True))
-    best = best_vit(rows, grid)
+    chosen = {
+        BEST_VIT: best_vit(rows, grid),
+        BEST_VIT_IN_DOMAIN: best_vit(rows, grid, in_domain=True),
+    }
     out = []
     for target_size, target in targets(config, rows).items():
         for comp in COMPARISONS:
-            ref = best if comp.reference == BEST_VIT else comp.reference
+            ref = chosen.get(comp.reference, comp.reference)
             if ref not in setups or comp.treatment not in setups:
                 continue
             r, t = curve(rows, ref, grid), curve(rows, comp.treatment, grid)

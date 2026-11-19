@@ -8,6 +8,7 @@ Usage:
 import argparse
 import copy
 import math
+import os
 import platform
 import time
 from pathlib import Path
@@ -19,6 +20,9 @@ from bias import augment, runlog
 from bias import config as config_lib
 from bias.data import subsets, tensors
 from bias.models import registry
+
+# Treatments that start from outside-data weights instead of random ones.
+PRETRAINED = frozenset({"imagenet", "imagenet1k"})
 
 
 def pick_device() -> torch.device:
@@ -151,9 +155,10 @@ def train_run(
         config: Parsed config.
         data: Dataset tensors on the device.
         model_name: "cnn", "vit" or "mlp".
-        treatment: "none", "aug", "imagenet" (ViT from ImageNet weights)
-          or "lejepa" (from this seed's LeJEPA backbone). The last two
-          fine-tune the whole network with augmentation.
+        treatment: "none", "aug", "imagenet" (ViT from ImageNet-21k
+          weights), "imagenet1k" (from ImageNet-1k weights) or "lejepa"
+          (from this seed's LeJEPA backbone). The last three fine-tune
+          the whole network with augmentation.
         size: Grid entry, such as "10%".
         seed: Seed for the subset, the init and the batch order.
         lr: Peak learning rate.
@@ -169,7 +174,7 @@ def train_run(
         ValueError: If the treatment is not implemented.
         FloatingPointError: If the loss diverges.
     """
-    if treatment not in ("none", "aug", "imagenet", "lejepa"):
+    if treatment not in PRETRAINED | {"none", "aug", "lejepa"}:
         raise ValueError(f"treatment not implemented yet: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
     index = torch.from_numpy(subset.indices).to(device)
@@ -180,7 +185,9 @@ def train_run(
 
     torch.manual_seed(seed)
     model = registry.build(
-        model_name, config["dataset"], pretrained=treatment == "imagenet"
+        model_name,
+        config["dataset"],
+        weights=treatment if treatment in PRETRAINED else None,
     )
     if treatment == "lejepa":
         _load_backbone(model, config_lib.lejepa_checkpoint(config, model_name, seed))
@@ -191,7 +198,7 @@ def train_run(
     cursor = 0
     best_val, best_state = -1.0, copy.deepcopy(model.state_dict())
     augmented = None
-    if treatment in ("aug", "imagenet", "lejepa"):
+    if treatment != "none":
         augmented = augment.augmented_batches(
             data.pool_raw[torch.from_numpy(subset.indices)],
             data.pool_y.cpu()[torch.from_numpy(subset.indices)],
@@ -199,7 +206,7 @@ def train_run(
             batch,
             total,
             seed,
-            config.get("workers", 8),
+            int(os.environ.get("BIAS_WORKERS", config.get("workers", 8))),
         )
     bf16 = config.get("precision", "fp32") == "bf16"
 
