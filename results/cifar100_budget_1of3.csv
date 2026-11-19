@@ -1,0 +1,4 @@
+dataset,model,treatment,size,n_labelled,seed,lr,weight_decay,steps,best_val,test,metric,n_params,gpu,wall_seconds,stage,precision
+cifar100,cnn,aug,100%,45000,0,0.003,0.1,80000,0.7549999952316284,0.7619999647140503,top1,11220132,NVIDIA GeForce RTX 5090,2465.427542509002,budget,bf16
+cifar100,cnn,none,10%,4500,0,3e-05,0.05,14064,0.19219999015331268,0.20019999146461487,top1,11220132,NVIDIA GeForce RTX 5090,437.0520838299999,budget,bf16
+cifar100,vit,aug,10%,4500,0,0.0003,0.1,14064,0.3051999807357788,0.3024999797344208,top1,5380132,NVIDIA GeForce RTX 5090,343.89654057200096,budget,bf16
