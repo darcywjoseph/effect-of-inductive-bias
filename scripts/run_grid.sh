@@ -34,3 +34,7 @@ if grep -q '^budget_check:' "$config"; then
   run_stage budget
   echo "$(date -u +%FT%TZ) $name budget done"
 fi
+if grep -q '^leakage:' "$config"; then
+  run_stage leakage
+  echo "$(date -u +%FT%TZ) $name leakage done"
+fi

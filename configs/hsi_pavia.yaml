@@ -54,3 +54,17 @@ lejepa:
   warmup_frac: 0.05
   weight_decay: {cnn: 5.0e-4, vit: 0.05, mlp: 0.05}
   checkpoint_dir: checkpoints/lejepa
+# Does the step budget let each model converge? These setups rerun at
+# twice the steps, seed 0, at their final settings. A validation gain of
+# threshold or more means the budget is too short.
+budget_check:
+  factor: 2
+  threshold: 0.01
+  sizes: ["20pc", "all"]
+  configurations: [[cnn, none], [cnn, aug], [vit, none], [vit, aug]]
+# Leakage demo: these setups rerun on a random per-pixel split (no blocks,
+# no buffer) at their final settings, every seed, against the block-split
+# finals. The MLP matches the per-pixel model of the cited 2026 study.
+leakage:
+  sizes: ["20pc", "all"]
+  configurations: [[cnn, aug], [mlp, none]]

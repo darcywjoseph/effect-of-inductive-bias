@@ -179,14 +179,20 @@ class _ToDevice:
 def _hsi(config: dict[str, Any], device: torch.device) -> TensorData:
     data = config["data"]
     scene = hsi.load_scene(Path(config["data_root"]), config["dataset"])
-    split = hsi.block_split(
-        scene.labels,
-        data["block"],
-        data["patch_radius"],
-        tuple(data["fractions"]),
-        data["split_seed"],
-        data["tries"],
-    ).split
+    if data.get("split", "block") == "random":
+        # The leaky protocol, used only by the leakage stage.
+        split = hsi.random_split(
+            scene.labels, tuple(data["fractions"]), data["split_seed"]
+        )
+    else:
+        split = hsi.block_split(
+            scene.labels,
+            data["block"],
+            data["patch_radius"],
+            tuple(data["fractions"]),
+            data["split_seed"],
+            data["tries"],
+        ).split
     mean, std = hsi.band_stats(scene.cube, split)
     cube = (scene.cube - mean) / std
 
