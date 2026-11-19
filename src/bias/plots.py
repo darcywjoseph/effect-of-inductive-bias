@@ -22,13 +22,14 @@ import matplotlib.ticker  # noqa: E402
 from bias import analyse  # noqa: E402
 from bias import config as config_lib  # noqa: E402
 
-# Categorical slots 1-4 of the reference palette, in fixed order, each with
+# Categorical slots 1-5 of the reference palette, in fixed order, each with
 # its own marker so identity never rests on colour alone.
 TREATMENT_STYLE = {
     "none": ("#2a78d6", "o", "No augmentation"),
     "aug": ("#eb6834", "s", "Augmentation"),
     "lejepa": ("#1baf7a", "^", "LeJEPA + aug"),
-    "imagenet": ("#eda100", "D", "ImageNet start + aug"),
+    "imagenet": ("#eda100", "D", "ImageNet-21k start + aug"),
+    "imagenet1k": ("#e87ba4", "v", "ImageNet-1k start + aug"),
 }
 MODEL_TITLES = {"cnn": "CNN", "vit": "ViT-Tiny", "mlp": "MLP"}
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"

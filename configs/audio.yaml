@@ -12,7 +12,16 @@ data:
   spec_augment: {freq_masks: 2, freq_width: 7, time_masks: 2, time_width: 20}
 grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
 anchors: ["1%", "10%", "100%"]
-targets: {reference: {model: cnn, treatment: aug}, sizes: ["10%", "50%"]}
+# Plateau rule, fixed before any audio or hyperspectral result: a preset
+# target whose reference score gains less than min_gain from its grid size
+# to the next one sits on the plateau, and is replaced by the score at
+# which the reference has covered the given share of its headroom (from
+# chance to its score at the largest size). Uses the reference curve only.
+targets:
+  reference: {model: cnn, treatment: aug}
+  sizes: ["10%", "50%"]
+  plateau: {min_gain: 0.01, headroom: {"10%": 0.5, "50%": 0.9}}
+chance: 0.0286  # 35 classes
 seeds: [0, 1, 2]
 optimiser: {name: adamw, warmup_frac: 0.05, schedule: cosine}
 batch_size: 128
@@ -21,9 +30,15 @@ workers: 8  # CPU augmentation workers
 steps: {epochs_equivalent: 200, min: 2000, max: 40000, evals: 20}
 sweep:
   lr: [1.0e-4, 3.0e-4, 1.0e-3]
+  # Rungs past the grid, tried only where the best lr sits at an edge.
+  lr_ladder: [1.0e-5, 3.0e-5, 1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2]
   weight_decay: [0.05, 0.1]
   seed: 0
-# The brief's nine configurations plus CNN + LeJEPA (its optional tenth).
+# The brief's configurations, CNN + LeJEPA (its optional tenth), and both
+# models from ImageNet-1k weights, so the pretrained-start comparison gives
+# the CNN and the ViT the same outside data. MLP + LeJEPA is left out on
+# audio: its pretraining is a third of the LeJEPA cost, and on images it
+# added little (the MLP is the floor baseline).
 configurations:
   - [cnn, none]
   - [cnn, aug]
@@ -32,9 +47,23 @@ configurations:
   - [vit, aug]
   - [vit, lejepa]
   - [vit, imagenet]
+  - [vit, imagenet1k]
+  - [cnn, imagenet1k]
   - [mlp, none]
   - [mlp, aug]
-  - [mlp, lejepa]
+# Does the step budget let each model converge? These setups rerun at
+# factor x the budget, seed 0, final settings. Rule, fixed before results:
+# a gain in validation score of threshold or more means the budget is too
+# short; then max steps rises for every model and finals are rerun.
+budget_check:
+  factor: 2
+  threshold: 0.01
+  sizes: ["10%", "100%"]
+  configurations:
+    - [cnn, none]
+    - [cnn, aug]
+    - [vit, none]
+    - [vit, aug]
 bootstrap: {draws: 10000, level: 0.95}
 results_dir: results
 # LeJEPA pretraining on the whole pool, labels removed. Batch 128 (the

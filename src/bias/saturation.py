@@ -1,0 +1,252 @@
+"""Checks on exchange rates near a ceiling.
+
+E is a ratio of data needs at one score, so it depends on how steep the
+curves are there. Where a curve flattens, a small score gap becomes a huge
+data ratio. Three views guard against reading that as a large E:
+
+1. E against the target score, over every level both setups reach. A flat
+   line means E is a constant worth quoting; a climb near the top is
+   saturation. Lines are seed means, the band a seed bootstrap.
+2. Error-rate ratios at fixed data: (1 - score) of the reference over that
+   of the treatment, at each grid size. They stay meaningful near the
+   ceiling, where data ratios do not.
+3. A plateau flag on each preset target, applied by analyse.targets: the
+   rule is in the config and was fixed before audio or hyperspectral
+   results existed.
+
+Usage:
+    python -m bias.saturation configs/images.yaml
+"""
+
+import argparse
+from pathlib import Path
+from typing import Any
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+from bias import analyse, exchange_rate  # noqa: E402
+from bias import config as config_lib  # noqa: E402
+
+INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+LINE = "#2a78d6"
+
+
+def _pairs(config: dict[str, Any], rows: pd.DataFrame) -> list[tuple[str, Any, Any]]:
+    """Returns (question, reference, treatment) for comparisons with data."""
+    grid = config["grid"]
+    setups = set(zip(rows.model, rows.treatment, strict=True))
+    chosen = {
+        analyse.BEST_VIT: analyse.best_vit(rows, grid),
+        analyse.BEST_VIT_IN_DOMAIN: analyse.best_vit(rows, grid, in_domain=True),
+    }
+    out = []
+    for comp in analyse.COMPARISONS:
+        ref = chosen.get(comp.reference, comp.reference)
+        if ref in setups and comp.treatment in setups:
+            out.append((comp.question, ref, comp.treatment))
+    return out
+
+
+def rate_curves(
+    config: dict[str, Any], rows: pd.DataFrame, levels: int = 30, draws: int = 1000
+) -> pd.DataFrame:
+    """Computes E at evenly spaced target scores for every comparison.
+
+    Levels run from 5% of the way above chance to the highest score both
+    seed-mean curves reach, so every point is an exact crossing.
+
+    Args:
+        config: Parsed config, with chance.
+        rows: Final runs.
+        levels: Target scores per comparison.
+        draws: Bootstrap draws per level.
+
+    Returns:
+        One row per comparison and level: E and its 95% interval.
+    """
+    grid = config["grid"]
+    chance = config["chance"]
+    out = []
+    for question, ref, treat in _pairs(config, rows):
+        r = analyse.curve(rows, ref, grid)
+        t = analyse.curve(rows, treat, grid)
+        top = min(
+            exchange_rate.isotonic(r.test.mean(0))[-1],
+            exchange_rate.isotonic(t.test.mean(0))[-1],
+        )
+        low = max(
+            exchange_rate.isotonic(r.test.mean(0))[0],
+            exchange_rate.isotonic(t.test.mean(0))[0],
+            chance + 0.05 * (top - chance),
+        )
+        if top <= low:
+            continue
+        for target in np.linspace(low, top, levels):
+            est = exchange_rate.exchange_rate(
+                r.sizes, r.test.mean(0), t.sizes, t.test.mean(0), target
+            )
+            band = exchange_rate.bootstrap_interval(
+                r.sizes, r.test, t.sizes, t.test, target, draws=draws
+            )
+            out.append(
+                {
+                    "question": question,
+                    "reference": "+".join(ref),
+                    "treatment": "+".join(treat),
+                    "target": float(target),
+                    "E": est.value if est.kind == "exact" else np.nan,
+                    "low": band.low,
+                    "high": band.high,
+                }
+            )
+    return pd.DataFrame(out)
+
+
+def error_ratios(
+    config: dict[str, Any], rows: pd.DataFrame, draws: int = 2000
+) -> pd.DataFrame:
+    """Computes error-rate ratios at each grid size for every comparison.
+
+    Args:
+        config: Parsed config.
+        rows: Final runs.
+        draws: Seed-bootstrap draws for the interval.
+
+    Returns:
+        One row per comparison and size: the reference's error rate over
+        the treatment's, from seed means, with a 95% interval.
+    """
+    grid = config["grid"]
+    rng = np.random.default_rng(0)
+    out = []
+    for question, ref, treat in _pairs(config, rows):
+        r = analyse.curve(rows, ref, grid)
+        t = analyse.curve(rows, treat, grid)
+        ref_err, treat_err = 1.0 - r.test, 1.0 - t.test
+        boot = np.empty((draws, len(grid)))
+        for d in range(draws):
+            a = ref_err[rng.integers(0, len(ref_err), len(ref_err))].mean(0)
+            b = treat_err[rng.integers(0, len(treat_err), len(treat_err))].mean(0)
+            boot[d] = a / b
+        low, high = np.quantile(boot, [0.025, 0.975], axis=0)
+        point = ref_err.mean(0) / treat_err.mean(0)
+        for i, size in enumerate(grid):
+            out.append(
+                {
+                    "question": question,
+                    "reference": "+".join(ref),
+                    "treatment": "+".join(treat),
+                    "size": size,
+                    "n_labelled": float(r.sizes[i]),
+                    "ref_error": float(ref_err.mean(0)[i]),
+                    "treat_error": float(treat_err.mean(0)[i]),
+                    "error_ratio": float(point[i]),
+                    "low": float(low[i]),
+                    "high": float(high[i]),
+                }
+            )
+    return pd.DataFrame(out)
+
+
+def plot_rate_curves(
+    config: dict[str, Any],
+    curves: pd.DataFrame,
+    targets: dict[str, float],
+    out: Path,
+) -> Path:
+    """Draws E against the target score, one panel per comparison.
+
+    Args:
+        config: Parsed config.
+        curves: Output of rate_curves.
+        targets: Target labels and scores, drawn as reference lines.
+        out: Directory for the figure.
+
+    Returns:
+        The PNG path.
+    """
+    questions = list(dict.fromkeys(curves.question))
+    cols = 4
+    rows_n = -(-len(questions) // cols)
+    fig, axes = plt.subplots(
+        rows_n, cols, figsize=(3.4 * cols, 2.6 * rows_n), squeeze=False
+    )
+    for ax, question in zip(axes.flat, questions, strict=False):
+        c = curves[curves.question == question]
+        high = c.high.replace(np.inf, np.nan)
+        ax.fill_between(c.target, c.low, high, color=LINE, alpha=0.18, lw=0)
+        ax.plot(c.target, c.E, color=LINE, lw=2)
+        ax.axhline(1.0, color=MUTED, lw=1, zorder=0)
+        for label, score in targets.items():
+            ax.axvline(score, color=MUTED, lw=1, ls=(0, (4, 3)), zorder=0)
+            ax.annotate(
+                label,
+                (score, 1.0),
+                xycoords=("data", "axes fraction"),
+                xytext=(2, -10),
+                textcoords="offset points",
+                fontsize=7,
+                color=MUTED,
+            )
+        ax.set_yscale("log", base=2)
+        ax.set_title(question, color=INK, fontsize=9, loc="left")
+        ax.grid(True, color=GRID, lw=0.6)
+        ax.tick_params(colors=MUTED, labelsize=7)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color(GRID)
+    for ax in list(axes.flat)[len(questions) :]:
+        ax.set_visible(False)
+    metric = analyse_metric_label(config)
+    fig.supxlabel(f"Target ({metric})", color=MUTED, fontsize=9)
+    fig.supylabel("Exchange rate E (log scale)", color=MUTED, fontsize=9)
+    fig.tight_layout()
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"rate_vs_target_{config['dataset']}.png"
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
+    return path
+
+
+def analyse_metric_label(config: dict[str, Any]) -> str:
+    """Returns the metric's name for axis labels.
+
+    Args:
+        config: Parsed config.
+
+    Returns:
+        "test top-1 accuracy" or "test balanced accuracy".
+    """
+    return {"top1": "test top-1 accuracy", "balanced_acc": "test balanced accuracy"}[
+        config["metric"]
+    ]
+
+
+def main() -> None:
+    """Writes the rate-vs-target and error-ratio tables and the figure."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("config", type=Path)
+    parser.add_argument("--out", type=Path, default=Path("figures"))
+    args = parser.parse_args()
+    config = config_lib.load_config(args.config)
+    rows = analyse.load_finals(config)
+    results = Path(config["results_dir"])
+    curves = rate_curves(config, rows)
+    curves.to_csv(results / f"rate_vs_target_{config['dataset']}.csv", index=False)
+    errors = error_ratios(config, rows)
+    errors.to_csv(results / f"error_ratios_{config['dataset']}.csv", index=False)
+    targets = analyse.targets(config, rows)
+    print(plot_rate_curves(config, curves, targets, args.out))
+    flat = curves.groupby("question").E.agg(["min", "max"])
+    flat["max_over_min"] = flat["max"] / flat["min"]
+    print(flat.round(2).to_string())
+
+
+if __name__ == "__main__":
+    main()

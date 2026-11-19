@@ -24,6 +24,8 @@ SHIFT = {
     ("vit", "aug"): 4.0,
     ("vit", "lejepa"): 2.0,
     ("vit", "imagenet"): 1.0,
+    ("vit", "imagenet1k"): 1.5,
+    ("cnn", "imagenet1k"): 0.5,
     ("mlp", "none"): 32.0,
     ("mlp", "aug"): 16.0,
     ("mlp", "lejepa"): 8.0,
@@ -68,10 +70,22 @@ def test_exchange_rates_recover_the_shifts() -> None:
     at10 = result[result.target_size == "10%"].set_index("question")
     assert at10.loc["CNN bias vs ViT, no aug", "E"] == pytest.approx(4.0, rel=0.02)
     assert at10.loc["Augmentation, ViT", "E"] == pytest.approx(2.0, rel=0.02)
-    assert at10.loc["Pretrained start, ViT", "E"] == pytest.approx(4.0, rel=0.02)
+    assert at10.loc["Pretrained start (IN-21k), ViT", "E"] == pytest.approx(
+        4.0, rel=0.02
+    )
+    assert at10.loc["Pretrained start (IN-1k), CNN", "E"] == pytest.approx(
+        2.0, rel=0.02
+    )
+    assert at10.loc["CNN bias with IN-1k start for both", "E"] == pytest.approx(
+        3.0, rel=0.02
+    )
     # The best ViT by validation is the ImageNet start, which matches the CNN.
     assert at10.loc["CNN lead left over best ViT", "reference"] == "vit+imagenet"
     assert at10.loc["CNN lead left over best ViT", "E"] == pytest.approx(1.0, rel=0.02)
+    # Without outside data the best ViT is LeJEPA, at half the CNN's rate.
+    best_in_domain = at10.loc["CNN lead over best in-domain ViT"]
+    assert best_in_domain["reference"] == "vit+lejepa"
+    assert best_in_domain["E"] == pytest.approx(2.0, rel=0.02)
 
 
 def test_curves_that_never_reach_the_target_give_lower_bounds() -> None:
@@ -81,3 +95,24 @@ def test_curves_that_never_reach_the_target_give_lower_bounds() -> None:
     row = at50.loc["CNN bias vs MLP, no aug"].to_dict()
     assert row["kind"] == "lower"
     assert analyse.describe(row).startswith("more than")
+
+
+def test_plateau_rule_replaces_a_flat_target() -> None:
+    rows = _rows()
+    flat = rows.copy()
+    ref = (flat.model == "cnn") & (flat.treatment == "aug")
+    # Freeze the reference from 50% onwards: no gain to the next size.
+    top = flat.loc[ref & (flat["size"] == "50%"), "test"].mean()
+    flat.loc[ref & flat["size"].isin(["50%", "100%"]), "test"] = top
+    config = {
+        **CONFIG,
+        "chance": 0.0,
+        "targets": {
+            **CONFIG["targets"],
+            "plateau": {"min_gain": 0.01, "headroom": {"10%": 0.5, "50%": 0.9}},
+        },
+    }
+    rules = analyse.target_rules(config, flat)
+    assert not rules["10%"]["plateau"]
+    assert rules["50%"]["plateau"]
+    assert rules["50%"]["score"] == pytest.approx(0.9 * top)
