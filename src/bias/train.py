@@ -197,6 +197,7 @@ def train_run(
     order = torch.randperm(len(index), generator=generator)
     cursor = 0
     best_val, best_state = -1.0, copy.deepcopy(model.state_dict())
+    history: list[tuple[int, float]] = []
     augmented = None
     if treatment != "none":
         augmented = augment.augmented_batches(
@@ -236,6 +237,7 @@ def train_run(
             val = accuracy(
                 model, data.val_x, data.val_y, bf16=bf16, metric=config["metric"]
             )
+            history.append((step + 1, val))
             if val > best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
     if device.type == "mps":
@@ -243,6 +245,19 @@ def train_run(
     wall = time.perf_counter() - started
 
     model.load_state_dict(best_state)
+    runlog.append_history(
+        Path(config["results_dir"]) / "history" / f"{config['dataset']}_{stage}.jsonl",
+        {
+            "model": model_name,
+            "treatment": treatment,
+            "size": size,
+            "seed": seed,
+            "lr": lr,
+            "weight_decay": weight_decay,
+            "steps": total,
+            "val": history,
+        },
+    )
     return runlog.RunRecord(
         dataset=config["dataset"],
         model=model_name,

@@ -34,6 +34,19 @@ configurations:
   - [mlp, none]
   - [mlp, aug]
   - [mlp, lejepa]
+# Does the step budget let each model converge? These setups rerun at
+# factor x the budget, seed 0, final settings. Rule, fixed before results:
+# a gain in validation score of threshold or more means the budget is too
+# short; then max steps rises for every model and finals are rerun.
+budget_check:
+  factor: 2
+  threshold: 0.01
+  sizes: ["10%", "100%"]
+  configurations:
+    - [cnn, none]
+    - [cnn, aug]
+    - [vit, none]
+    - [vit, aug]
 bootstrap: {draws: 10000, level: 0.95}
 results_dir: results
 # LeJEPA pretraining on the whole pool, labels removed. One backbone per

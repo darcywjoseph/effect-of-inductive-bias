@@ -123,3 +123,12 @@ def test_ladder_steps_down_and_stops_at_its_end() -> None:
         jobs += grid.extension_jobs(config, _sweep_rows(jobs, score))
     assert sorted({j.lr for j in jobs})[0] == 1e-5
     assert grid.extension_jobs(config, _sweep_rows(jobs, score)) == []
+
+
+def test_budget_jobs_are_seed_zero_at_final_settings() -> None:
+    rows = _sweep_rows(grid.tune_jobs(IMAGES, EMPTY), {1e-4: 0.1, 3e-4: 0.3, 1e-3: 0.2})
+    jobs = grid.budget_jobs(IMAGES, rows)
+    assert len(jobs) == 4 * 2
+    assert {j.seed for j in jobs} == {0}
+    assert {j.size for j in jobs} == {"10%", "100%"}
+    assert {j.lr for j in jobs} == {3e-4}

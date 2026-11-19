@@ -13,11 +13,17 @@ the grid. Finals: every configuration, size and seed, with
 the pair that scored best on validation at the size's nearest anchor
 (nearest by grid position). The test score plays no part in the choice.
 
+Budget check: a few setups rerun with a multiple of the step budget, seed
+0, at their final settings, to test whether the budget lets each model
+converge. If more steps lift validation by the config's threshold, the
+budget is too short for that model.
+
 Usage:
     python -m bias.grid configs/images.yaml --stage pretrain --shard 0/1
     python -m bias.grid configs/images.yaml --stage tune --shard 0/3
     python -m bias.grid configs/images.yaml --stage tune --pending
     python -m bias.grid configs/images.yaml --stage final --shard 0/3
+    python -m bias.grid configs/images.yaml --stage budget --shard 0/3
 """
 
 import argparse
@@ -30,7 +36,7 @@ import pandas as pd
 
 from bias import config as config_lib
 from bias import pretrain_lejepa, runlog, train
-from bias.data import tensors
+from bias.data import subsets, tensors
 
 
 @dataclasses.dataclass(frozen=True)
@@ -188,6 +194,29 @@ def final_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
     return jobs
 
 
+def budget_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
+    """Returns the budget-check jobs: seed 0 at the final settings.
+
+    Args:
+        config: Parsed config, with a budget_check section.
+        tune: Tuning rows from the run log.
+
+    Returns:
+        One job per listed configuration and size; none without the section.
+    """
+    check = config.get("budget_check")
+    if not check:
+        return []
+    wanted = {
+        (m, t, size) for m, t in check["configurations"] for size in check["sizes"]
+    }
+    return [
+        j
+        for j in final_jobs(config, tune)
+        if j.seed == 0 and (j.model, j.treatment, j.size) in wanted
+    ]
+
+
 def _read_logs(log_glob: str, stage: str) -> pd.DataFrame:
     frames = [pd.read_csv(path) for path in glob.glob(log_glob)]
     rows = pd.concat(frames) if frames else pd.DataFrame(columns=runlog.FIELDS)
@@ -213,14 +242,15 @@ def pending_jobs(config: dict[str, Any], stage: str, log_glob: str) -> list[Job]
 
     Args:
         config: Parsed config.
-        stage: "tune" or "final".
+        stage: "tune", "final" or "budget".
         log_glob: Glob of the dataset's run logs.
 
     Returns:
         The jobs to run, sorted so shards finish at about the same time.
     """
     tune = _read_logs(log_glob, "tune")
-    jobs = tune_jobs(config, tune) if stage == "tune" else final_jobs(config, tune)
+    make = {"tune": tune_jobs, "final": final_jobs, "budget": budget_jobs}[stage]
+    jobs = make(config, tune)
     done = _done(_read_logs(log_glob, stage))
     left = list(dict.fromkeys(j for j in jobs if j not in done))
     left.sort(key=lambda j: -config["grid"].index(j.size))
@@ -236,7 +266,9 @@ def main() -> None:
     """Runs one shard of one stage."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path)
-    parser.add_argument("--stage", choices=["pretrain", "tune", "final"], required=True)
+    parser.add_argument(
+        "--stage", choices=["pretrain", "tune", "final", "budget"], required=True
+    )
     parser.add_argument("--shard", default="0/1")
     parser.add_argument("--max-steps", type=int, default=None, help="smoke tests")
     parser.add_argument(
@@ -267,6 +299,10 @@ def main() -> None:
     jobs = pending_jobs(config, args.stage, log_glob)
     log = logs / f"{config['dataset']}_{args.stage}_{args.shard.replace('/', 'of')}.csv"
     for job in _shard(jobs, args.shard):
+        steps = args.max_steps
+        if args.stage == "budget":
+            n = len(subsets.draw_subset(data.pool_y.cpu().numpy(), job.size, 0).indices)
+            steps = config["budget_check"]["factor"] * train.step_budget(n, config)
         record = train.train_run(
             config,
             data,
@@ -278,7 +314,7 @@ def main() -> None:
             job.weight_decay,
             args.stage,
             device,
-            args.max_steps,
+            steps,
         )
         print(record, flush=True)
         runlog.append_run(log, record)

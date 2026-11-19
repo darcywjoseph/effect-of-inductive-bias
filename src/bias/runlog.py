@@ -2,7 +2,10 @@
 
 import csv
 import dataclasses
+import json
+import os
 from pathlib import Path
+from typing import Any
 
 
 @dataclasses.dataclass
@@ -12,7 +15,7 @@ class RunRecord:
     Attributes:
         dataset: Dataset name, such as "cifar100".
         model: "cnn", "vit" or "mlp".
-        treatment: "none", "aug", "lejepa" or "imagenet".
+        treatment: "none", "aug", "lejepa", "imagenet" or "imagenet1k".
         size: Grid entry, such as "10%" or "20pc".
         n_labelled: Labelled examples actually used.
         seed: Seed for the subset and the weight initialisation.
@@ -73,3 +76,22 @@ def append_run(path: Path, record: RunRecord) -> None:
         if is_new:
             writer.writeheader()
         writer.writerow(dataclasses.asdict(record))
+
+
+def append_history(path: Path, entry: dict[str, Any]) -> None:
+    """Appends one run's validation history as a JSON line.
+
+    The line goes out in one write to a file opened for appending, so
+    shards that share the file do not interleave their lines.
+
+    Args:
+        path: JSON-lines file. Parent directories are created.
+        entry: The run's key fields and its (step, score) pairs.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = (json.dumps(entry) + "\n").encode()
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        os.write(fd, line)
+    finally:
+        os.close(fd)

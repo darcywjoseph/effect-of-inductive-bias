@@ -30,3 +30,7 @@ done
 echo "$(date -u +%FT%TZ) $name tune done"
 run_stage final
 echo "$(date -u +%FT%TZ) $name final done"
+if grep -q '^budget_check:' "$config"; then
+  run_stage budget
+  echo "$(date -u +%FT%TZ) $name budget done"
+fi

@@ -258,6 +258,31 @@ def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def budget_gains(config: dict[str, Any]) -> pd.DataFrame:
+    """Compares budget-check runs with the same final runs at 1x budget.
+
+    Args:
+        config: Parsed config with a budget_check section.
+
+    Returns:
+        One row per checked setup: validation and test at 1x and at the
+        longer budget, the validation gain, and whether it reaches the
+        config's threshold. Empty if no budget runs exist yet.
+    """
+    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_budget_*.csv")
+    if not glob.glob(pattern):
+        return pd.DataFrame()
+    longer = _read(config, "budget")
+    base = load_finals(config)
+    key = ["model", "treatment", "size", "seed", "lr", "weight_decay"]
+    both = longer.merge(base, on=key, suffixes=("_long", "_base"))
+    both["val_gain"] = both.best_val_long - both.best_val_base
+    both["too_short"] = both.val_gain >= config["budget_check"]["threshold"]
+    columns = ["model", "treatment", "size", "steps_base", "steps_long"]
+    scores = ["best_val_base", "best_val_long", "val_gain", "test_base", "test_long"]
+    return both[columns + scores + ["too_short"]]
+
+
 def describe(row: Mapping[Hashable, Any]) -> str:
     """Formats one estimate for people, bounds included.
 
@@ -288,6 +313,13 @@ def main() -> None:
     result.to_csv(path, index=False)
     for row in result.to_dict("records"):
         print(f"{row['target_size']:>6} {row['question']:<34} {describe(row)}")
+    gains = budget_gains(config)
+    if not gains.empty:
+        gains.to_csv(
+            Path(config["results_dir"]) / f"budget_check_{config['dataset']}.csv",
+            index=False,
+        )
+        print(gains.round(4).to_string(index=False))
 
 
 if __name__ == "__main__":
