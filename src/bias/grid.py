@@ -18,17 +18,12 @@ Budget check: a few setups rerun with a multiple of the step budget, seed
 converge. If more steps lift validation by the config's threshold, the
 budget is too short for that model.
 
-Leakage (hyperspectral only): a few setups rerun at their final settings on
-a random per-pixel split instead of the block-and-buffer split, every seed,
-to show how much a leaky split inflates the score.
-
 Usage:
     python -m bias.grid configs/images.yaml --stage pretrain --shard 0/1
     python -m bias.grid configs/images.yaml --stage tune --shard 0/3
     python -m bias.grid configs/images.yaml --stage tune --pending
     python -m bias.grid configs/images.yaml --stage final --shard 0/3
     python -m bias.grid configs/images.yaml --stage budget --shard 0/3
-    python -m bias.grid configs/hsi_pavia.yaml --stage leakage --shard 0/3
 """
 
 import argparse
@@ -222,28 +217,6 @@ def budget_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
     ]
 
 
-def leakage_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
-    """Returns the leakage jobs: final settings, rerun on a random split.
-
-    Args:
-        config: Parsed config, with a leakage section.
-        tune: Tuning rows from the run log (block split).
-
-    Returns:
-        One job per listed configuration, size and seed; none without the
-        section.
-    """
-    check = config.get("leakage")
-    if not check:
-        return []
-    wanted = {
-        (m, t, size) for m, t in check["configurations"] for size in check["sizes"]
-    }
-    return [
-        j for j in final_jobs(config, tune) if (j.model, j.treatment, j.size) in wanted
-    ]
-
-
 def _read_logs(log_glob: str, stage: str) -> pd.DataFrame:
     frames = [pd.read_csv(path) for path in glob.glob(log_glob)]
     rows = pd.concat(frames) if frames else pd.DataFrame(columns=runlog.FIELDS)
@@ -269,19 +242,14 @@ def pending_jobs(config: dict[str, Any], stage: str, log_glob: str) -> list[Job]
 
     Args:
         config: Parsed config.
-        stage: "tune", "final", "budget" or "leakage".
+        stage: "tune", "final" or "budget".
         log_glob: Glob of the dataset's run logs.
 
     Returns:
         The jobs to run, sorted so shards finish at about the same time.
     """
     tune = _read_logs(log_glob, "tune")
-    make = {
-        "tune": tune_jobs,
-        "final": final_jobs,
-        "budget": budget_jobs,
-        "leakage": leakage_jobs,
-    }[stage]
+    make = {"tune": tune_jobs, "final": final_jobs, "budget": budget_jobs}[stage]
     jobs = make(config, tune)
     done = _done(_read_logs(log_glob, stage))
     left = list(dict.fromkeys(j for j in jobs if j not in done))
@@ -300,7 +268,7 @@ def main() -> None:
     parser.add_argument("config", type=Path)
     parser.add_argument(
         "--stage",
-        choices=["pretrain", "tune", "final", "budget", "leakage"],
+        choices=["pretrain", "tune", "final", "budget"],
         required=True,
     )
     parser.add_argument("--shard", default="0/1")
@@ -316,8 +284,6 @@ def main() -> None:
         print(len(pending_jobs(config, args.stage, log_glob)))
         return
     device = train.pick_device()
-    if args.stage == "leakage":
-        config = {**config, "data": {**config["data"], "split": "random"}}
     data = tensors.load_tensors(config, device)
 
     if args.stage == "pretrain":

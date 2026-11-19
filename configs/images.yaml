@@ -5,7 +5,7 @@ data: {val_per_class: 50, split_seed: 0}
 grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
 anchors: ["1%", "10%", "100%"]
 # Target rule: CNN with augmentation, seed-mean test score at these sizes.
-# Plateau rule, fixed before any audio or hyperspectral result: a preset
+# Plateau rule, fixed before any result: a preset
 # target whose reference score gains less than min_gain from its grid size
 # to the next one sits on the plateau, and is replaced by the score at
 # which the reference has covered the given share of its headroom (from

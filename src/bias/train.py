@@ -84,8 +84,7 @@ def accuracy(
         y: Labels.
         batch: Evaluation batch size.
         bf16: Run the forward pass under bf16 autocast, as in training.
-        metric: "top1" accuracy, or "balanced_acc", the mean of per-class
-          recall over the classes present in y.
+        metric: "top1" accuracy, the only metric defined.
 
     Returns:
         The score, in [0, 1].
@@ -100,9 +99,6 @@ def accuracy(
     hits = (predicted == y).float()
     if metric == "top1":
         return float(hits.mean())
-    if metric == "balanced_acc":
-        classes = torch.unique(y)
-        return float(torch.stack([hits[y == c].mean() for c in classes]).mean())
     raise ValueError(f"unknown metric: {metric=}")
 
 

@@ -24,7 +24,7 @@ class RunRecord:
         steps: Optimisation steps run.
         best_val: Best validation score, used to pick the checkpoint.
         test: Test score of the chosen checkpoint.
-        metric: "top1" or "balanced_acc".
+        metric: "top1".
         n_params: Trainable parameter count.
         gpu: Device name.
         wall_seconds: Wall-clock training time.

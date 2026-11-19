@@ -1,1 +1,1 @@
-"""Dataset loaders, nested subsets and hyperspectral block splits."""
+"""Dataset loaders and nested subsets."""
