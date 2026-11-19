@@ -4,7 +4,16 @@ metric: balanced_acc
 data: {block: 16, patch_radius: 2, fractions: [0.6, 0.2, 0.2], split_seed: 0, tries: 2000, noise_std: 0.05}
 grid: ["5pc", "10pc", "20pc", "50pc", "100pc", "200pc", "all"]
 anchors: ["5pc", "50pc", "all"]
-targets: {reference: {model: cnn, treatment: aug}, sizes: ["20pc", "100pc"]}
+# Plateau rule, fixed before any audio or hyperspectral result: a preset
+# target whose reference score gains less than min_gain from its grid size
+# to the next one sits on the plateau, and is replaced by the score at
+# which the reference has covered the given share of its headroom (from
+# chance to its score at the largest size). Uses the reference curve only.
+targets:
+  reference: {model: cnn, treatment: aug}
+  sizes: ["20pc", "100pc"]
+  plateau: {min_gain: 0.01, headroom: {"20pc": 0.5, "100pc": 0.9}}
+chance: 0.0625  # 16 classes, balanced accuracy
 seeds: [0, 1, 2]
 optimiser: {name: adamw, warmup_frac: 0.05, schedule: cosine}
 batch_size: 128

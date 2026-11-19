@@ -5,7 +5,16 @@ data: {val_per_class: 50, split_seed: 0}
 grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
 anchors: ["1%", "10%", "100%"]
 # Target rule: CNN with augmentation, seed-mean test score at these sizes.
-targets: {reference: {model: cnn, treatment: aug}, sizes: ["10%", "50%"]}
+# Plateau rule, fixed before any audio or hyperspectral result: a preset
+# target whose reference score gains less than min_gain from its grid size
+# to the next one sits on the plateau, and is replaced by the score at
+# which the reference has covered the given share of its headroom (from
+# chance to its score at the largest size). Uses the reference curve only.
+targets:
+  reference: {model: cnn, treatment: aug}
+  sizes: ["10%", "50%"]
+  plateau: {min_gain: 0.01, headroom: {"10%": 0.5, "50%": 0.9}}
+chance: 0.01  # 100 classes
 seeds: [0, 1, 2]
 optimiser: {name: adamw, warmup_frac: 0.05, schedule: cosine}
 batch_size: 128

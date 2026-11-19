@@ -187,7 +187,11 @@ def best_vit(rows: pd.DataFrame, grid: list[str], in_domain: bool = False) -> Se
 
 
 def targets(config: dict[str, Any], rows: pd.DataFrame) -> dict[str, float]:
-    """Returns the fixed targets: reference test scores at the target sizes.
+    """Returns the targets: reference test scores at the target sizes.
+
+    A target on the reference's plateau (gain to the next grid size below
+    the config's min_gain) is replaced by the score at which the reference
+    has covered the config's share of its headroom above chance.
 
     Args:
         config: Parsed config.
@@ -196,11 +200,39 @@ def targets(config: dict[str, Any], rows: pd.DataFrame) -> dict[str, float]:
     Returns:
         A map from target size to target score.
     """
+    return {size: rule["score"] for size, rule in target_rules(config, rows).items()}
+
+
+def target_rules(
+    config: dict[str, Any], rows: pd.DataFrame
+) -> dict[str, dict[str, Any]]:
+    """Returns each target with the evidence for the plateau rule.
+
+    Args:
+        config: Parsed config.
+        rows: Final runs.
+
+    Returns:
+        A map from target size to {"score", "preset", "gain", "plateau"}.
+    """
     spec = config["targets"]
+    grid = config["grid"]
     ref = (spec["reference"]["model"], spec["reference"]["treatment"])
-    c = curve(rows, ref, config["grid"])
-    means = c.test.mean(axis=0)
-    return {size: float(means[config["grid"].index(size)]) for size in spec["sizes"]}
+    means = curve(rows, ref, grid).test.mean(axis=0)
+    plateau = spec.get("plateau")
+    out = {}
+    for size in spec["sizes"]:
+        i = grid.index(size)
+        preset = float(means[i])
+        gain = float(means[i + 1] - means[i]) if i + 1 < len(grid) else np.nan
+        flat = bool(plateau) and not gain >= plateau["min_gain"]
+        score = preset
+        if flat:
+            chance = config["chance"]
+            share = plateau["headroom"][size]
+            score = chance + share * (float(means[-1]) - chance)
+        out[size] = {"score": score, "preset": preset, "gain": gain, "plateau": flat}
+    return out
 
 
 def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
@@ -309,6 +341,12 @@ def main() -> None:
     config = config_lib.load_config(args.config)
     rows = load_finals(config)
     result = table(config, rows)
+    for size, rule in target_rules(config, rows).items():
+        state = "on plateau, replaced" if rule["plateau"] else "kept"
+        print(
+            f"target {size}: preset {rule['preset']:.3f}, gain to next size "
+            f"{rule['gain']:.3f}, {state}: {rule['score']:.3f}"
+        )
     path = Path(config["results_dir"]) / f"exchange_rates_{config['dataset']}.csv"
     result.to_csv(path, index=False)
     for row in result.to_dict("records"):

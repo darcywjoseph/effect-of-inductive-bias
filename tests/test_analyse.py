@@ -95,3 +95,24 @@ def test_curves_that_never_reach_the_target_give_lower_bounds() -> None:
     row = at50.loc["CNN bias vs MLP, no aug"].to_dict()
     assert row["kind"] == "lower"
     assert analyse.describe(row).startswith("more than")
+
+
+def test_plateau_rule_replaces_a_flat_target() -> None:
+    rows = _rows()
+    flat = rows.copy()
+    ref = (flat.model == "cnn") & (flat.treatment == "aug")
+    # Freeze the reference from 50% onwards: no gain to the next size.
+    top = flat.loc[ref & (flat["size"] == "50%"), "test"].mean()
+    flat.loc[ref & flat["size"].isin(["50%", "100%"]), "test"] = top
+    config = {
+        **CONFIG,
+        "chance": 0.0,
+        "targets": {
+            **CONFIG["targets"],
+            "plateau": {"min_gain": 0.01, "headroom": {"10%": 0.5, "50%": 0.9}},
+        },
+    }
+    rules = analyse.target_rules(config, flat)
+    assert not rules["10%"]["plateau"]
+    assert rules["50%"]["plateau"]
+    assert rules["50%"]["score"] == pytest.approx(0.9 * top)
