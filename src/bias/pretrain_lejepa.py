@@ -9,8 +9,8 @@ output, 256 random slices redrawn each step, a 17-knot Epps-Pulley test on
 [-3, 3], and the mean over all views as the prediction target.
 
 Each dataset supplies its own view transform (TensorData.ssl_view); see
-augment.cifar_ssl_view for images. Batch-level augmentation, such as
-SpecAugment for audio, is applied to every view as well.
+augment.cifar_ssl_view for images. Batch-level augmentation is applied to
+every view as well.
 
 Usage:
     python -m bias.pretrain_lejepa configs/images.yaml --model vit --seed 0
@@ -111,8 +111,7 @@ def lejepa_loss(
 @torch.no_grad()
 def _features(model: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
     model.eval()
-    # Small chunks: other shards share the GPU, and a ViT on long
-    # spectrograms needs about 15 GB for 1000 examples at once.
+    # Small chunks: other shards share the GPU.
     out = torch.cat([model(x[i : i + 200]) for i in range(0, len(x), 200)])
     model.train()
     return F.normalize(out.float(), dim=1)

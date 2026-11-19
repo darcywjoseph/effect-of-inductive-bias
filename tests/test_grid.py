@@ -6,7 +6,6 @@ from bias import config as config_lib
 from bias import grid
 
 IMAGES = config_lib.load_config(Path("configs/images.yaml"))
-HSI = config_lib.load_config(Path("configs/hsi_salinas.yaml"))
 
 
 def test_nearest_anchor_images() -> None:
@@ -23,15 +22,6 @@ def test_nearest_anchor_images() -> None:
         "50%": "100%",
         "100%": "100%",
     }
-
-
-def test_nearest_anchor_hsi() -> None:
-    mapping = {
-        s: grid.nearest_anchor(s, HSI["grid"], HSI["anchors"]) for s in HSI["grid"]
-    }
-    assert mapping["10pc"] == "5pc"
-    assert mapping["100pc"] == "50pc"
-    assert mapping["200pc"] == "all"
 
 
 EMPTY = pd.DataFrame(
@@ -132,13 +122,3 @@ def test_budget_jobs_are_seed_zero_at_final_settings() -> None:
     assert {j.seed for j in jobs} == {0}
     assert {j.size for j in jobs} == {"10%", "100%"}
     assert {j.lr for j in jobs} == {3e-4}
-
-
-def test_leakage_jobs_cover_every_seed_and_only_listed_setups() -> None:
-    pavia = config_lib.load_config(Path("configs/hsi_pavia.yaml"))
-    rows = _sweep_rows(grid.tune_jobs(pavia, EMPTY), {1e-4: 0.1, 3e-4: 0.3, 1e-3: 0.2})
-    jobs = grid.leakage_jobs(pavia, rows)
-    assert len(jobs) == 2 * 2 * 3
-    assert {(j.model, j.treatment) for j in jobs} == {("cnn", "aug"), ("mlp", "none")}
-    assert {j.size for j in jobs} == {"20pc", "all"}
-    assert grid.leakage_jobs(IMAGES, rows) == []

@@ -11,8 +11,7 @@ data ratio. Three views guard against reading that as a large E:
    of the treatment, at each grid size. They stay meaningful near the
    ceiling, where data ratios do not.
 3. A plateau flag on each preset target, applied by analyse.targets: the
-   rule is in the config and was fixed before audio or hyperspectral
-   results existed.
+   rule is in the config.
 
 Usage:
     python -m bias.saturation configs/images.yaml
@@ -221,11 +220,9 @@ def analyse_metric_label(config: dict[str, Any]) -> str:
         config: Parsed config.
 
     Returns:
-        "test top-1 accuracy" or "test balanced accuracy".
+        "test top-1 accuracy".
     """
-    return {"top1": "test top-1 accuracy", "balanced_acc": "test balanced accuracy"}[
-        config["metric"]
-    ]
+    return {"top1": "test top-1 accuracy"}[config["metric"]]
 
 
 def main() -> None:

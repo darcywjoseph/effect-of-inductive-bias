@@ -35,7 +35,6 @@ MODEL_TITLES = {"cnn": "CNN", "vit": "ViT-Tiny", "mlp": "MLP"}
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 METRIC_LABELS = {
     "top1": "Test accuracy (top-1)",
-    "balanced_acc": "Test balanced accuracy",
 }
 
 

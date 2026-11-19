@@ -315,36 +315,6 @@ def budget_gains(config: dict[str, Any]) -> pd.DataFrame:
     return both[columns + scores + ["too_short"]]
 
 
-def leakage_gaps(config: dict[str, Any]) -> pd.DataFrame:
-    """Compares random-split reruns with the block-split finals.
-
-    Args:
-        config: Parsed config with a leakage section.
-
-    Returns:
-        One row per setup and size: seed-mean test score on each split
-        and the gap (random minus block). Empty if no leakage runs exist.
-    """
-    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_leakage_*.csv")
-    if not glob.glob(pattern):
-        return pd.DataFrame()
-    leaky = _read(config, "leakage")
-    base = load_finals(config)
-    key = ["model", "treatment", "size", "seed", "lr", "weight_decay"]
-    both = leaky.merge(base, on=key, suffixes=("_random", "_block"))
-    out = (
-        both.groupby(["model", "treatment", "size"], sort=False)
-        .agg(
-            seeds=("seed", "nunique"),
-            test_block=("test_block", "mean"),
-            test_random=("test_random", "mean"),
-        )
-        .reset_index()
-    )
-    out["gap"] = out.test_random - out.test_block
-    return out
-
-
 def describe(row: Mapping[Hashable, Any]) -> str:
     """Formats one estimate for people, bounds included.
 
@@ -388,13 +358,6 @@ def main() -> None:
             index=False,
         )
         print(gains.round(4).to_string(index=False))
-    gaps = leakage_gaps(config)
-    if not gaps.empty:
-        gaps.to_csv(
-            Path(config["results_dir"]) / f"leakage_{config['dataset']}.csv",
-            index=False,
-        )
-        print(gaps.round(4).to_string(index=False))
 
 
 if __name__ == "__main__":
