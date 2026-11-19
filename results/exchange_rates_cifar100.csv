@@ -1,0 +1,35 @@
+dataset,target_size,target,question,reference,treatment,E,kind,low,high,share_censored,share_undefined
+cifar100,10%,0.4431999822457631,"CNN bias vs ViT, no aug",vit+none,cnn+none,1.789702358553569,exact,1.776021836902492,1.8035877900947928,0.0,0.0
+cifar100,10%,0.4431999822457631,"CNN bias vs MLP, no aug",mlp+none,cnn+none,2.396935990942629,lower,inf,inf,1.0,0.0
+cifar100,10%,0.4431999822457631,"CNN bias vs ViT, with aug",vit+aug,cnn+aug,2.6117221344177484,exact,2.530849193327087,2.701159390373124,0.0,0.0
+cifar100,10%,0.4431999822457631,"CNN bias vs MLP, with aug",mlp+aug,cnn+aug,10.000000000000002,lower,inf,inf,1.0,0.0
+cifar100,10%,0.4431999822457631,"Augmentation, ViT",vit+none,vit+aug,2.8588897273615586,exact,2.764262496648837,2.9382884698795197,0.0,0.0
+cifar100,10%,0.4431999822457631,"Augmentation, MLP",mlp+none,mlp+aug,,undefined,,,0.0,1.0
+cifar100,10%,0.4431999822457631,"Augmentation, CNN",cnn+none,cnn+aug,4.171992926714476,exact,4.119642583744705,4.227954782847434,0.0,0.0
+cifar100,10%,0.4431999822457631,"Self-supervision, ViT",vit+aug,vit+lejepa,6.055774714613604,exact,5.593768645704908,6.5289919869584025,0.0,0.0
+cifar100,10%,0.4431999822457631,"Self-supervision, MLP",mlp+aug,mlp+lejepa,,undefined,inf,inf,0.2939,0.7061
+cifar100,10%,0.4431999822457631,"Self-supervision, CNN",cnn+aug,cnn+lejepa,3.4577575338245135,exact,3.2975732737526804,3.615798991842658,0.0,0.0
+cifar100,10%,0.4431999822457631,"Pretrained start (IN-21k), ViT",vit+aug,vit+imagenet,12.114783319987964,exact,11.341123036900258,12.79685924747534,0.0,0.0
+cifar100,10%,0.4431999822457631,"Pretrained start (IN-1k), ViT",vit+aug,vit+imagenet1k,16.4401509188835,exact,15.76211784286887,17.231036006551946,0.0,0.0
+cifar100,10%,0.4431999822457631,"Pretrained start (IN-1k), CNN",cnn+aug,cnn+imagenet1k,4.001151485637538,exact,3.9055247243450864,4.12055503316256,0.0,0.0
+cifar100,10%,0.4431999822457631,CNN lead left over best ViT,vit+imagenet1k,cnn+aug,0.15886241843545792,exact,0.15334649686549393,0.1647222889798779,0.0,0.0
+cifar100,10%,0.4431999822457631,CNN lead over best in-domain ViT,vit+lejepa,cnn+aug,0.4312779549270918,exact,0.40339861092135326,0.47276510940283106,0.0,0.0
+cifar100,10%,0.4431999822457631,CNN bias with LeJEPA for both,vit+lejepa,cnn+lejepa,1.4912545978215808,exact,1.3675293986077421,1.6403761032231294,0.0,0.0
+cifar100,10%,0.4431999822457631,CNN bias with IN-1k start for both,vit+imagenet1k,cnn+imagenet1k,0.6356326015350047,exact,0.6095730312926861,0.6632298235473782,0.0,0.0
+cifar100,50%,0.6780333121617635,"CNN bias vs ViT, no aug",vit+none,cnn+none,,undefined,,,0.0,1.0
+cifar100,50%,0.6780333121617635,"CNN bias vs MLP, no aug",mlp+none,cnn+none,,undefined,,,0.0,1.0
+cifar100,50%,0.6780333121617635,"CNN bias vs ViT, with aug",vit+aug,cnn+aug,2.0000000000000013,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"CNN bias vs MLP, with aug",mlp+aug,cnn+aug,2.0000000000000013,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"Augmentation, ViT",vit+none,vit+aug,,undefined,,,0.0,1.0
+cifar100,50%,0.6780333121617635,"Augmentation, MLP",mlp+none,mlp+aug,,undefined,,,0.0,1.0
+cifar100,50%,0.6780333121617635,"Augmentation, CNN",cnn+none,cnn+aug,2.0000000000000013,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"Self-supervision, ViT",vit+aug,vit+lejepa,1.8916121686671354,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"Self-supervision, MLP",mlp+aug,mlp+lejepa,,undefined,,,0.0,1.0
+cifar100,50%,0.6780333121617635,"Self-supervision, CNN",cnn+aug,cnn+lejepa,1.2078949095791391,exact,1.145042184397733,1.273473674335191,0.0,0.0
+cifar100,50%,0.6780333121617635,"Pretrained start (IN-21k), ViT",vit+aug,vit+imagenet,9.183929697696177,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"Pretrained start (IN-1k), ViT",vit+aug,vit+imagenet1k,10.130602838341705,lower,inf,inf,1.0,0.0
+cifar100,50%,0.6780333121617635,"Pretrained start (IN-1k), CNN",cnn+aug,cnn+imagenet1k,2.894352374022311,exact,2.7219299674837525,3.051064882437139,0.0,0.0
+cifar100,50%,0.6780333121617635,CNN lead left over best ViT,vit+imagenet1k,cnn+aug,0.1974216176386384,exact,0.19402584464780112,0.19997161185147877,0.0,0.0
+cifar100,50%,0.6780333121617635,CNN lead over best in-domain ViT,vit+lejepa,cnn+aug,1.0572991827438063,exact,0.9091104765566312,1.148102796908222,0.0,0.0
+cifar100,50%,0.6780333121617635,CNN bias with LeJEPA for both,vit+lejepa,cnn+lejepa,1.2771063007384276,exact,1.0981099168778203,1.4288698415782055,0.0,0.0
+cifar100,50%,0.6780333121617635,CNN bias with IN-1k start for both,vit+imagenet1k,cnn+imagenet1k,0.5714077276957181,exact,0.5372314094435617,0.6024944695638366,0.0,0.0
