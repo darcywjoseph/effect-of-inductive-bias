@@ -111,7 +111,9 @@ def lejepa_loss(
 @torch.no_grad()
 def _features(model: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
     model.eval()
-    out = torch.cat([model(x[i : i + 1000]) for i in range(0, len(x), 1000)])
+    # Small chunks: other shards share the GPU, and a ViT on long
+    # spectrograms needs about 15 GB for 1000 examples at once.
+    out = torch.cat([model(x[i : i + 200]) for i in range(0, len(x), 200)])
     model.train()
     return F.normalize(out.float(), dim=1)
 
