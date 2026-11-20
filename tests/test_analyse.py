@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -30,7 +31,7 @@ SHIFT = {
     ("mlp", "aug"): 16.0,
     ("mlp", "lejepa"): 8.0,
 }
-CONFIG = {
+CONFIG: dict[str, Any] = {
     "dataset": "fake",
     "grid": GRID,
     "targets": {
