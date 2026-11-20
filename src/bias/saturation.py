@@ -27,22 +27,6 @@ INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 LINE = "#2a78d6"
 
 
-def _pairs(config: dict[str, Any], rows: pd.DataFrame) -> list[tuple[str, Any, Any]]:
-    """Returns (question, reference, treatment) for comparisons with data."""
-    grid = config["grid"]
-    setups = set(zip(rows.model, rows.treatment, strict=True))
-    chosen = {
-        analyse.BEST_VIT: analyse.best_vit(rows, grid),
-        analyse.BEST_VIT_IN_DOMAIN: analyse.best_vit(rows, grid, in_domain=True),
-    }
-    out = []
-    for comp in analyse.COMPARISONS:
-        ref = chosen.get(comp.reference, comp.reference)
-        if ref in setups and comp.treatment in setups:
-            out.append((comp.question, ref, comp.treatment))
-    return out
-
-
 def rate_curves(
     config: dict[str, Any], rows: pd.DataFrame, levels: int = 30, draws: int = 1000
 ) -> pd.DataFrame:
@@ -63,7 +47,7 @@ def rate_curves(
     grid = config["grid"]
     chance = config["chance"]
     out = []
-    for question, ref, treat in _pairs(config, rows):
+    for question, ref, treat in analyse.pairs(config, rows):
         r = analyse.curve(rows, ref, grid)
         t = analyse.curve(rows, treat, grid)
         top = min(
@@ -115,7 +99,7 @@ def error_ratios(
     grid = config["grid"]
     rng = np.random.default_rng(0)
     out = []
-    for question, ref, treat in _pairs(config, rows):
+    for question, ref, treat in analyse.pairs(config, rows):
         r = analyse.curve(rows, ref, grid)
         t = analyse.curve(rows, treat, grid)
         ref_err, treat_err = 1.0 - r.test, 1.0 - t.test
