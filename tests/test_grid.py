@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from bias import config as config_lib
-from bias import grid
+from bias import grid, train
 
 IMAGES = config_lib.load_config(Path("configs/images.yaml"))
 
@@ -29,7 +29,7 @@ EMPTY = pd.DataFrame(
 )
 
 
-def _sweep_rows(jobs: list[grid.Job], score: dict[float, float]) -> pd.DataFrame:
+def _sweep_rows(jobs: list[train.Job], score: dict[float, float]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {

@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import dataclasses
-import glob
 from collections.abc import Hashable, Mapping
 from pathlib import Path
 from typing import Any
@@ -90,14 +89,6 @@ class Curve:
     val: npt.NDArray[np.float64]
 
 
-def _read(config: dict[str, Any], stage: str) -> pd.DataFrame:
-    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_{stage}_*.csv")
-    frames = [pd.read_csv(path) for path in sorted(glob.glob(pattern))]
-    if not frames:
-        raise ValueError(f"no {stage} runs match {pattern}")
-    return pd.concat(frames, ignore_index=True)
-
-
 def load_finals(config: dict[str, Any]) -> pd.DataFrame:
     """Reads the final runs that use the sweep's current choice of settings.
 
@@ -110,23 +101,12 @@ def load_finals(config: dict[str, Any]) -> pd.DataFrame:
     Raises:
         ValueError: If there are no final runs, or a run appears twice.
     """
-    rows = _read(config, "final")
-    wanted = {
-        (j.model, j.treatment, j.size, j.seed, j.lr, j.weight_decay)
-        for j in grid_runner.final_jobs(config, _read(config, "tune"))
-    }
-    current = [
-        (
-            r["model"],
-            r["treatment"],
-            r["size"],
-            int(r["seed"]),
-            r["lr"],
-            r["weight_decay"],
-        )
-        in wanted
-        for r in rows.to_dict("records")
-    ]
+    rows = grid_runner.read_runs(config, "final")
+    if rows.empty:
+        raise ValueError("no final runs logged")
+    tune = grid_runner.read_runs(config, "tune")
+    wanted = set(grid_runner.final_jobs(config, tune))
+    current = [job in wanted for job in grid_runner.logged_jobs(rows)]
     rows = rows[current].reset_index(drop=True)
     key = ["model", "treatment", "size", "seed"]
     if rows.duplicated(key).any():
@@ -231,6 +211,30 @@ def target_rules(
     return out
 
 
+def pairs(config: dict[str, Any], rows: pd.DataFrame) -> list[tuple[str, Setup, Setup]]:
+    """Returns the comparisons whose two setups both have runs.
+
+    Args:
+        config: Parsed config.
+        rows: Final runs.
+
+    Returns:
+        (question, reference, treatment) triples, with "best ViT"
+        references replaced by the setup chosen.
+    """
+    grid = config["grid"]
+    setups = set(zip(rows.model, rows.treatment, strict=True))
+    chosen = {
+        BEST_VIT: best_vit(rows, grid),
+        BEST_VIT_IN_DOMAIN: best_vit(rows, grid, in_domain=True),
+    }
+    resolved = [
+        (c.question, chosen.get(c.reference, c.reference), c.treatment)
+        for c in COMPARISONS
+    ]
+    return [(q, ref, treat) for q, ref, treat in resolved if {ref, treat} <= setups]
+
+
 def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
     """Computes every comparison at every target.
 
@@ -243,18 +247,10 @@ def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
     """
     grid = config["grid"]
     boot = config["bootstrap"]
-    setups = set(zip(rows.model, rows.treatment, strict=True))
-    chosen = {
-        BEST_VIT: best_vit(rows, grid),
-        BEST_VIT_IN_DOMAIN: best_vit(rows, grid, in_domain=True),
-    }
     out = []
     for target_size, target in targets(config, rows).items():
-        for comp in COMPARISONS:
-            ref = chosen.get(comp.reference, comp.reference)
-            if ref not in setups or comp.treatment not in setups:
-                continue
-            r, t = curve(rows, ref, grid), curve(rows, comp.treatment, grid)
+        for question, ref, treat in pairs(config, rows):
+            r, t = curve(rows, ref, grid), curve(rows, treat, grid)
             est = exchange_rate.exchange_rate(
                 r.sizes, r.test.mean(0), t.sizes, t.test.mean(0), target
             )
@@ -272,9 +268,9 @@ def table(config: dict[str, Any], rows: pd.DataFrame) -> pd.DataFrame:
                     "dataset": config["dataset"],
                     "target_size": target_size,
                     "target": target,
-                    "question": comp.question,
+                    "question": question,
                     "reference": "+".join(ref),
-                    "treatment": "+".join(comp.treatment),
+                    "treatment": "+".join(treat),
                     "E": est.value,
                     "kind": est.kind,
                     "low": interval.low,
@@ -297,10 +293,9 @@ def budget_gains(config: dict[str, Any]) -> pd.DataFrame:
         longer budget, the validation gain, and whether it reaches the
         config's threshold. Empty if no budget runs exist yet.
     """
-    pattern = str(Path(config["results_dir"]) / f"{config['dataset']}_budget_*.csv")
-    if not glob.glob(pattern):
+    longer = grid_runner.read_runs(config, "budget")
+    if longer.empty:
         return pd.DataFrame()
-    longer = _read(config, "budget")
     base = load_finals(config)
     key = ["model", "treatment", "size", "seed", "lr", "weight_decay"]
     both = longer.merge(base, on=key, suffixes=("_long", "_base"))

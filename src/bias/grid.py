@@ -24,37 +24,16 @@ Usage:
 """
 
 import argparse
-import dataclasses
-import glob
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import torch
 
 from bias import config as config_lib
 from bias import pretrain_lejepa, runlog, train
-from bias.data import subsets, tensors
-
-
-@dataclasses.dataclass(frozen=True)
-class Job:
-    """One supervised run.
-
-    Attributes:
-        model: "cnn", "vit" or "mlp".
-        treatment: "none", "aug", "lejepa", "imagenet" or "imagenet1k".
-        size: Grid entry.
-        seed: Run seed.
-        lr: Peak learning rate.
-        weight_decay: AdamW weight decay.
-    """
-
-    model: str
-    treatment: str
-    size: str
-    seed: int
-    lr: float
-    weight_decay: float
+from bias.data import tensors
+from bias.train import Job
 
 
 def nearest_anchor(size: str, grid: list[str], anchors: list[str]) -> str:
@@ -160,6 +139,30 @@ def best_settings(tune: pd.DataFrame) -> Settings:
     }
 
 
+def tuned(
+    config: dict[str, Any], settings: Settings, model: str, treatment: str, size: str
+) -> tuple[float, float]:
+    """Returns a setup's tuned settings at the anchor nearest to a size.
+
+    Args:
+        config: Parsed config.
+        settings: Output of best_settings.
+        model: Model name.
+        treatment: Treatment name.
+        size: Grid entry.
+
+    Returns:
+        (lr, weight decay).
+
+    Raises:
+        ValueError: If the anchor has no finished tuning runs.
+    """
+    key = (model, treatment, nearest_anchor(size, config["grid"], config["anchors"]))
+    if key not in settings:
+        raise ValueError(f"no tuning result for {key}")
+    return settings[key]
+
+
 def final_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
     """Returns the final jobs, with settings from the nearest anchor.
 
@@ -174,16 +177,18 @@ def final_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
         ValueError: If an anchor has no finished tuning runs.
     """
     settings = best_settings(tune)
-    jobs: list[Job] = []
-    for model, treatment in config["configurations"]:
-        for size in config["grid"]:
-            anchor = nearest_anchor(size, config["grid"], config["anchors"])
-            key = (model, treatment, anchor)
-            if key not in settings:
-                raise ValueError(f"no tuning result for {key}")
-            lr, wd = settings[key]
-            jobs.extend(Job(model, treatment, size, s, lr, wd) for s in config["seeds"])
-    return jobs
+    return [
+        Job(
+            model,
+            treatment,
+            size,
+            seed,
+            *tuned(config, settings, model, treatment, size),
+        )
+        for model, treatment in config["configurations"]
+        for size in config["grid"]
+        for seed in config["seeds"]
+    ]
 
 
 def budget_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
@@ -209,14 +214,32 @@ def budget_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
     ]
 
 
-def _read_logs(log_glob: str, stage: str) -> pd.DataFrame:
-    frames = [pd.read_csv(path) for path in glob.glob(log_glob)]
+def read_runs(config: dict[str, Any], stage: str) -> pd.DataFrame:
+    """Reads one stage's runs from every log of the dataset.
+
+    Args:
+        config: Parsed config.
+        stage: Stage label the runs were logged under.
+
+    Returns:
+        One row per run, in log order; empty if there are none.
+    """
+    logs = Path(config["results_dir"]).glob(f"{config['dataset']}_*.csv")
+    frames = [pd.read_csv(path) for path in sorted(logs)]
     rows = pd.concat(frames) if frames else pd.DataFrame(columns=runlog.FIELDS)
-    return rows[rows.stage == stage]
+    return rows[rows.stage == stage].reset_index(drop=True)
 
 
-def _done(rows: pd.DataFrame) -> set[Job]:
-    return {
+def logged_jobs(rows: pd.DataFrame) -> list[Job]:
+    """Returns the job behind each logged run.
+
+    Args:
+        rows: Rows of a run log.
+
+    Returns:
+        One job per row, in row order.
+    """
+    return [
         Job(
             str(r["model"]),
             str(r["treatment"]),
@@ -226,27 +249,68 @@ def _done(rows: pd.DataFrame) -> set[Job]:
             float(r["weight_decay"]),
         )
         for r in rows.to_dict("records")
-    }
+    ]
 
 
-def pending_jobs(config: dict[str, Any], stage: str, log_glob: str) -> list[Job]:
+def unlogged(config: dict[str, Any], stage: str, jobs: list[Job]) -> list[Job]:
+    """Returns the jobs a stage has not logged yet, without repeats.
+
+    Args:
+        config: Parsed config.
+        stage: Stage label.
+        jobs: The stage's jobs.
+
+    Returns:
+        The jobs still to run, in the order given.
+    """
+    done = set(logged_jobs(read_runs(config, stage)))
+    return list(dict.fromkeys(j for j in jobs if j not in done))
+
+
+def pending_jobs(config: dict[str, Any], stage: str) -> list[Job]:
     """Returns a stage's jobs not yet in the logs, longest first.
 
     Args:
         config: Parsed config.
         stage: "tune", "final" or "budget".
-        log_glob: Glob of the dataset's run logs.
 
     Returns:
         The jobs to run, sorted so shards finish at about the same time.
     """
-    tune = _read_logs(log_glob, "tune")
     make = {"tune": tune_jobs, "final": final_jobs, "budget": budget_jobs}[stage]
-    jobs = make(config, tune)
-    done = _done(_read_logs(log_glob, stage))
-    left = list(dict.fromkeys(j for j in jobs if j not in done))
+    left = unlogged(config, stage, make(config, read_runs(config, "tune")))
     left.sort(key=lambda j: -config["grid"].index(j.size))
     return left
+
+
+def run_jobs(
+    config: dict[str, Any],
+    data: tensors.TensorData,
+    jobs: list[Job],
+    stage: str,
+    log: Path,
+    device: torch.device,
+    max_steps: int | None = None,
+    step_factor: int = 1,
+) -> None:
+    """Trains each job and appends it to the log.
+
+    Args:
+        config: Parsed config.
+        data: Dataset tensors on the device.
+        jobs: The runs to make.
+        stage: Stage label for the log.
+        log: CSV to append to.
+        device: Training device.
+        max_steps: Optional override of the step budget, for smoke tests.
+        step_factor: Multiple of the step budget to train for.
+    """
+    for job in jobs:
+        record = train.train_run(
+            config, data, job, stage, device, max_steps, step_factor
+        )
+        print(record, flush=True)
+        runlog.append_run(log, record)
 
 
 def _shard(items: list[Any], shard: str) -> list[Any]:
@@ -270,10 +334,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
-    logs = Path(config["results_dir"])
-    log_glob = str(logs / f"{config['dataset']}_*.csv")
     if args.pending:
-        print(len(pending_jobs(config, args.stage, log_glob)))
+        print(len(pending_jobs(config, args.stage)))
         return
     device = train.pick_device()
     data = tensors.load_tensors(config, device)
@@ -290,28 +352,17 @@ def main() -> None:
             print({k: v for k, v in summary.items() if k != "history"}, flush=True)
         return
 
-    jobs = pending_jobs(config, args.stage, log_glob)
-    log = logs / f"{config['dataset']}_{args.stage}_{args.shard.replace('/', 'of')}.csv"
-    for job in _shard(jobs, args.shard):
-        steps = args.max_steps
-        if args.stage == "budget":
-            n = len(subsets.draw_subset(data.pool_y.cpu().numpy(), job.size, 0).indices)
-            steps = config["budget_check"]["factor"] * train.step_budget(n, config)
-        record = train.train_run(
-            config,
-            data,
-            job.model,
-            job.treatment,
-            job.size,
-            job.seed,
-            job.lr,
-            job.weight_decay,
-            args.stage,
-            device,
-            steps,
-        )
-        print(record, flush=True)
-        runlog.append_run(log, record)
+    name = f"{config['dataset']}_{args.stage}_{args.shard.replace('/', 'of')}.csv"
+    run_jobs(
+        config,
+        data,
+        _shard(pending_jobs(config, args.stage), args.shard),
+        args.stage,
+        Path(config["results_dir"]) / name,
+        device,
+        args.max_steps,
+        config["budget_check"]["factor"] if args.stage == "budget" else 1,
+    )
 
 
 if __name__ == "__main__":
