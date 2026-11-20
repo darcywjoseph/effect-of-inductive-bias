@@ -1,4 +1,4 @@
-"""Runs the study's grid: LeJEPA pretraining, the tuning sweep, final runs.
+"""Runs the grid: LeJEPA pretraining, the tuning sweep, final runs.
 
 Each stage is a list of jobs. A job already in the log is skipped, so a
 stage can be stopped and resumed, and --shard i/n splits a stage across
@@ -8,15 +8,12 @@ Tuning: every configuration, at each anchor size, one seed, every
 (lr, weight decay) pair. Where the best learning rate is the smallest or
 largest tried, the sweep steps one rung further along the config's
 learning-rate ladder, and repeats round by round until every best is
-bracketed or the ladder ends, so no setup is held back by the range of
-the grid. Finals: every configuration, size and seed, with
-the pair that scored best on validation at the size's nearest anchor
-(nearest by grid position). The test score plays no part in the choice.
+bracketed or the ladder ends. Finals: every configuration, size and seed,
+with the pair that scored best on validation at the size's nearest anchor
+(nearest by grid position).
 
 Budget check: a few setups rerun with a multiple of the step budget, seed
-0, at their final settings, to test whether the budget lets each model
-converge. If more steps lift validation by the config's threshold, the
-budget is too short for that model.
+0, at their final settings.
 
 Usage:
     python -m bias.grid configs/images.yaml --stage pretrain --shard 0/1
@@ -63,10 +60,6 @@ class Job:
 def nearest_anchor(size: str, grid: list[str], anchors: list[str]) -> str:
     """Returns the anchor nearest to a size by position in the grid.
 
-    The grids are roughly log-spaced, so position stands in for log size,
-    and it also places "all", which has no fixed number. No grid position
-    is equally far from two anchors.
-
     Args:
         size: Grid entry, such as "5%".
         grid: The config's grid, smallest first.
@@ -106,8 +99,7 @@ def extension_jobs(config: dict[str, Any], tune: pd.DataFrame) -> list[Job]:
 
     A (configuration, anchor) whose best learning rate is the smallest
     (largest) tried gets the next smaller (larger) rung of the ladder, at
-    every weight decay. Only groups that have finished the base sweep are
-    looked at, so a half-done group is never judged.
+    every weight decay. Groups still running the base sweep are skipped.
 
     Args:
         config: Parsed config, with sweep.lr_ladder.

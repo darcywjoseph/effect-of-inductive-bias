@@ -38,7 +38,7 @@ def load(root: Path, val_per_class: int = 50, split_seed: int = 0) -> Splits:
     Args:
         root: Data root that torchvision downloaded into.
         val_per_class: Training images per class moved to validation.
-        split_seed: Seed for the hold-out. Fixed for the whole study.
+        split_seed: Seed for the hold-out.
 
     Returns:
         The pool, validation and test splits.

@@ -16,18 +16,18 @@ uv run python -m bias.data.download --root data  # CIFAR-100
 # Per-class split sizes at every grid point
 uv run python -m bias.report_splits configs/images.yaml
 
+# Pretraining, tuning and final runs
+scripts/run_grid.sh configs/images.yaml
+
+# Exchange-rate tables and figures
+uv run python -m bias.analyse configs/images.yaml
+uv run python -m bias.saturation configs/images.yaml
+uv run python -m bias.plots configs/images.yaml
+
 # Checks
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy && uv run pytest
 ```
-
-## Experiment notes
-
-- Subsets are nested per seed: each class has one random order per seed and
-  every size takes a prefix of it.
-- The exchange-rate rule (isotonic fit, log2 interpolation, first crossing,
-  censored bounds, seed bootstrap) lives in `src/bias/exchange_rate.py`
-  and the targets are fixed in each config.
 
 ## Data
 

@@ -4,12 +4,9 @@ metric: top1
 data: {val_per_class: 50, split_seed: 0}
 grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
 anchors: ["1%", "10%", "100%"]
-# Target rule: CNN with augmentation, seed-mean test score at these sizes.
-# Plateau rule, fixed before any result: a preset
-# target whose reference score gains less than min_gain from its grid size
-# to the next one sits on the plateau, and is replaced by the score at
-# which the reference has covered the given share of its headroom (from
-# chance to its score at the largest size). Uses the reference curve only.
+# Targets are the reference's seed-mean test scores at these sizes. One
+# that gains less than min_gain to the next grid size is replaced by
+# chance + headroom x (the reference's score at the largest size - chance).
 targets:
   reference: {model: cnn, treatment: aug}
   sizes: ["10%", "50%"]
@@ -27,9 +24,6 @@ sweep:
   lr_ladder: [1.0e-5, 3.0e-5, 1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2]
   weight_decay: [0.05, 0.1]
   seed: 0
-# The brief's nine configurations, CNN + LeJEPA (its optional tenth), and
-# both models from ImageNet-1k weights, so the pretrained-start comparison
-# gives the CNN and the ViT the same outside data.
 configurations:
   - [cnn, none]
   - [cnn, aug]
@@ -43,10 +37,8 @@ configurations:
   - [mlp, none]
   - [mlp, aug]
   - [mlp, lejepa]
-# Does the step budget let each model converge? These setups rerun at
-# factor x the budget, seed 0, final settings. Rule, fixed before results:
-# a gain in validation score of threshold or more means the budget is too
-# short; then max steps rises for every model and finals are rerun.
+# These setups rerun at factor x the step budget, seed 0. A validation gain
+# of threshold or more flags the budget as too short.
 budget_check:
   factor: 2
   threshold: 0.01
@@ -59,8 +51,7 @@ budget_check:
 bootstrap: {draws: 10000, level: 0.95}
 results_dir: results
 # LeJEPA pretraining on the whole pool, labels removed. One backbone per
-# model and seed, reused at every data size. Values follow the authors'
-# minimal reference (MINIMAL.md) and README; wd per model as the README says.
+# model and seed, reused at every data size.
 lejepa:
   epochs: 200
   batch: 256

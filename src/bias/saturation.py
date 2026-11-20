@@ -1,17 +1,9 @@
-"""Checks on exchange rates near a ceiling.
+"""Exchange rates across target scores, and error-rate ratios.
 
-E is a ratio of data needs at one score, so it depends on how steep the
-curves are there. Where a curve flattens, a small score gap becomes a huge
-data ratio. Three views guard against reading that as a large E:
-
-1. E against the target score, over every level both setups reach. A flat
-   line means E is a constant worth quoting; a climb near the top is
-   saturation. Lines are seed means, the band a seed bootstrap.
+1. E against the target score, over every level both setups reach. Lines
+   are seed means, the band a seed bootstrap.
 2. Error-rate ratios at fixed data: (1 - score) of the reference over that
-   of the treatment, at each grid size. They stay meaningful near the
-   ceiling, where data ratios do not.
-3. A plateau flag on each preset target, applied by analyse.targets: the
-   rule is in the config.
+   of the treatment, at each grid size.
 
 Usage:
     python -m bias.saturation configs/images.yaml

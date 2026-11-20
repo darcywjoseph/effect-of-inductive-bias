@@ -32,9 +32,8 @@ def cifar_transform() -> Transform:
 def cifar_ssl_view() -> Transform:
     """Returns the LeJEPA view transform for one uint8 (3, 32, 32) image.
 
-    The LeJEPA authors give no recipe for 32x32 images, so this is their
-    README's colour recipe on a 32-pixel random resized crop, without
-    Gaussian blur, as is usual for CIFAR-sized self-supervision.
+    A 32-pixel random resized crop, a flip, colour jitter, greyscale and
+    solarisation, without Gaussian blur.
 
     Returns:
         A transform from uint8 image to uint8 image.

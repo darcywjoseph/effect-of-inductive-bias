@@ -1,6 +1,6 @@
 """Exchange rates read off learning curves.
 
-The rule, fixed before any final run:
+The rule:
 
 1. Average the test score over seeds at each data size.
 2. Make the curve non-decreasing with isotonic regression.
@@ -184,10 +184,9 @@ def bootstrap_interval(
 ) -> Interval:
     """Resamples seeds within each setup and returns a percentile interval.
 
-    A seed's whole curve is one unit, because the seed fixes both the
-    nested subsets and the initialisation. Draws that come out as a lower
-    bound count as +inf and upper bounds as 0, which widens the interval in
-    the honest direction. Undefined draws are dropped and counted.
+    A seed's whole curve is one unit. Draws that come out as a lower bound
+    count as +inf and upper bounds as 0. Undefined draws are dropped and
+    counted.
 
     Args:
         ref_sizes: Grid sizes of the reference curve.
