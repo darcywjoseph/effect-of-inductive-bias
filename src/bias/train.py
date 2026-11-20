@@ -74,9 +74,8 @@ def accuracy(
     y: torch.Tensor,
     batch: int = 1000,
     bf16: bool = False,
-    metric: str = "top1",
 ) -> float:
-    """Returns the model's score on a labelled set.
+    """Returns the model's top-1 accuracy on a labelled set.
 
     Args:
         model: Classifier.
@@ -84,10 +83,9 @@ def accuracy(
         y: Labels.
         batch: Evaluation batch size.
         bf16: Run the forward pass under bf16 autocast, as in training.
-        metric: "top1" accuracy, the only metric defined.
 
     Returns:
-        The score, in [0, 1].
+        The accuracy, in [0, 1].
     """
     model.eval()
     predictions = []
@@ -95,11 +93,7 @@ def accuracy(
         with torch.autocast(x.device.type, dtype=torch.bfloat16, enabled=bf16):
             predictions.append(model(x[start : start + batch]).argmax(1))
     model.train()
-    predicted = torch.cat(predictions)
-    hits = (predicted == y).float()
-    if metric == "top1":
-        return float(hits.mean())
-    raise ValueError(f"unknown metric: {metric=}")
+    return float((torch.cat(predictions) == y).float().mean())
 
 
 def lr_at(step: int, total: int, peak: float, warmup_frac: float) -> float:
@@ -145,7 +139,7 @@ def train_run(
     """Trains one model on one subset and scores the best checkpoint.
 
     The checkpoint with the best validation score is kept and only it is
-    scored on the test set. The test set plays no part in any choice.
+    scored on the test set.
 
     Args:
         config: Parsed config.
@@ -159,7 +153,7 @@ def train_run(
         seed: Seed for the subset, the init and the batch order.
         lr: Peak learning rate.
         weight_decay: AdamW weight decay.
-        stage: "pilot", "tune" or "final".
+        stage: Label for the run log, such as "tune" or "final".
         device: Training device.
         max_steps: Optional override of the step budget, for benchmarks.
 
@@ -167,11 +161,11 @@ def train_run(
         The run's log record.
 
     Raises:
-        ValueError: If the treatment is not implemented.
+        ValueError: If the treatment is unknown.
         FloatingPointError: If the loss diverges.
     """
     if treatment not in PRETRAINED | {"none", "aug", "lejepa"}:
-        raise ValueError(f"treatment not implemented yet: {treatment=}")
+        raise ValueError(f"unknown treatment: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
     index = torch.from_numpy(subset.indices).to(device)
     x, y = data.pool_x[index], data.pool_y[index]
@@ -181,9 +175,7 @@ def train_run(
 
     torch.manual_seed(seed)
     model = registry.build(
-        model_name,
-        config["dataset"],
-        weights=treatment if treatment in PRETRAINED else None,
+        model_name, weights=treatment if treatment in PRETRAINED else None
     )
     if treatment == "lejepa":
         _load_backbone(model, config_lib.lejepa_checkpoint(config, model_name, seed))
@@ -211,7 +203,7 @@ def train_run(
     for step in range(total):
         if augmented is not None:
             raw, labels = next(augmented)
-            xb = data.augment_batch(data.prepare(raw))
+            xb = data.prepare(raw)
             yb = labels.to(device, non_blocking=True)
         else:
             if cursor + batch > len(order):
@@ -230,9 +222,7 @@ def train_run(
         if (step + 1) % eval_every == 0 or step + 1 == total:
             if not math.isfinite(loss.item()):
                 raise FloatingPointError(f"loss diverged at step {step}: {loss.item()}")
-            val = accuracy(
-                model, data.val_x, data.val_y, bf16=bf16, metric=config["metric"]
-            )
+            val = accuracy(model, data.val_x, data.val_y, bf16=bf16)
             history.append((step + 1, val))
             if val > best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
@@ -265,9 +255,7 @@ def train_run(
         weight_decay=weight_decay,
         steps=total,
         best_val=best_val,
-        test=accuracy(
-            model, data.test_x, data.test_y, bf16=bf16, metric=config["metric"]
-        ),
+        test=accuracy(model, data.test_x, data.test_y, bf16=bf16),
         metric=config["metric"],
         n_params=registry.count_params(model),
         gpu=device_name(device),

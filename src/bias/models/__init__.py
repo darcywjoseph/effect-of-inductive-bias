@@ -1,1 +1,1 @@
-"""Model definitions: CNN, ViT and MLP per modality."""
+"""Model definitions: CNN, ViT and MLP."""

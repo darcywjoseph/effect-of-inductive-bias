@@ -10,13 +10,13 @@ from typing import Any
 
 @dataclasses.dataclass
 class RunRecord:
-    """Everything the study logs about one training run.
+    """What the log keeps about one training run.
 
     Attributes:
         dataset: Dataset name, such as "cifar100".
         model: "cnn", "vit" or "mlp".
         treatment: "none", "aug", "lejepa", "imagenet" or "imagenet1k".
-        size: Grid entry, such as "10%" or "20pc".
+        size: Grid entry, such as "10%".
         n_labelled: Labelled examples actually used.
         seed: Seed for the subset and the weight initialisation.
         lr: Peak learning rate.
@@ -28,7 +28,7 @@ class RunRecord:
         n_params: Trainable parameter count.
         gpu: Device name.
         wall_seconds: Wall-clock training time.
-        stage: "pilot", "tune" for sweep runs, or "final" for reported runs.
+        stage: "tune" for sweep runs, "final" for reported runs.
         precision: "fp32" or "bf16" (autocast).
     """
 

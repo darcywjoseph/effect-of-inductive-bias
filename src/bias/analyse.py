@@ -1,16 +1,12 @@
 """Exchange-rate tables from the final runs.
 
-For each dataset and each of its two targets, every comparison in the
-study gets a point estimate of E and a seed-bootstrap interval. Targets
-are the seed-mean test scores of the CNN with augmentation at the sizes
-fixed in the config. Where a comparison needs "the ViT with its best
-treatment", best means the highest seed-mean validation score averaged
-over the grid, so the test set chooses nothing; it is chosen twice, once
-over every treatment and once over those that use no outside data.
+Every comparison gets a point estimate of E and a seed-bootstrap interval
+at each of the config's targets. Where a comparison names "the ViT with
+its best treatment", best means the highest seed-mean validation score
+averaged over the grid, picked once over every treatment and once over
+those that use no outside data.
 
-Only final runs with the settings the tuning sweep now picks are used. A
-run made before the sweep's learning-rate ladder moved a setup's choice
-stays in the log but drops out here.
+Only final runs with the settings the tuning sweep picks are read.
 
 Usage:
     python -m bias.analyse configs/images.yaml
@@ -36,7 +32,7 @@ Setup = tuple[str, str]
 
 @dataclasses.dataclass(frozen=True)
 class Comparison:
-    """One row of the study's comparison table.
+    """One row of the comparison table.
 
     Attributes:
         question: What the row answers.

@@ -1,4 +1,4 @@
-"""Loads a modality's YAML config."""
+"""Loads a YAML config."""
 
 from pathlib import Path
 from typing import Any
@@ -7,7 +7,7 @@ import yaml
 
 
 def load_config(path: Path) -> dict[str, Any]:
-    """Reads a config file and checks the keys every config needs.
+    """Reads a config file and checks its required keys.
 
     Args:
         path: YAML config path.
