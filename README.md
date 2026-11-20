@@ -28,7 +28,7 @@ uv run python -m bias.inside configs/images.yaml measure
 # Exchange-rate tables and figures
 uv run python -m bias.analyse configs/images.yaml
 uv run python -m bias.saturation configs/images.yaml
-uv run python -m bias.plots configs/images.yaml
+uv run python -m bias.figures configs/images.yaml
 
 # Checks
 uv run ruff check src tests && uv run ruff format --check src tests
