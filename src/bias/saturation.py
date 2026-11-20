@@ -13,18 +13,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-import matplotlib
+import numpy as np
+import pandas as pd
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from bias import analyse, exchange_rate  # noqa: E402
-from bias import config as config_lib  # noqa: E402
-
-INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
-LINE = "#2a78d6"
+from bias import analyse, exchange_rate
+from bias import config as config_lib
 
 
 def rate_curves(
@@ -128,94 +121,17 @@ def error_ratios(
     return pd.DataFrame(out)
 
 
-def plot_rate_curves(
-    config: dict[str, Any],
-    curves: pd.DataFrame,
-    targets: dict[str, float],
-    out: Path,
-) -> Path:
-    """Draws E against the target score, one panel per comparison.
-
-    Args:
-        config: Parsed config.
-        curves: Output of rate_curves.
-        targets: Target labels and scores, drawn as reference lines.
-        out: Directory for the figure.
-
-    Returns:
-        The PNG path.
-    """
-    questions = list(dict.fromkeys(curves.question))
-    cols = 4
-    rows_n = -(-len(questions) // cols)
-    fig, axes = plt.subplots(
-        rows_n, cols, figsize=(3.4 * cols, 2.6 * rows_n), squeeze=False
-    )
-    for ax, question in zip(axes.flat, questions, strict=False):
-        c = curves[curves.question == question]
-        high = c.high.replace(np.inf, np.nan)
-        ax.fill_between(c.target, c.low, high, color=LINE, alpha=0.18, lw=0)
-        ax.plot(c.target, c.E, color=LINE, lw=2)
-        ax.axhline(1.0, color=MUTED, lw=1, zorder=0)
-        for label, score in targets.items():
-            ax.axvline(score, color=MUTED, lw=1, ls=(0, (4, 3)), zorder=0)
-            ax.annotate(
-                label,
-                (score, 1.0),
-                xycoords=("data", "axes fraction"),
-                xytext=(2, -10),
-                textcoords="offset points",
-                fontsize=7,
-                color=MUTED,
-            )
-        ax.set_yscale("log", base=2)
-        ax.set_title(question, color=INK, fontsize=9, loc="left")
-        ax.grid(True, color=GRID, lw=0.6)
-        ax.tick_params(colors=MUTED, labelsize=7)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        for side in ("left", "bottom"):
-            ax.spines[side].set_color(GRID)
-    for ax in list(axes.flat)[len(questions) :]:
-        ax.set_visible(False)
-    metric = analyse_metric_label(config)
-    fig.supxlabel(f"Target ({metric})", color=MUTED, fontsize=9)
-    fig.supylabel("Exchange rate E (log scale)", color=MUTED, fontsize=9)
-    fig.tight_layout()
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"rate_vs_target_{config['dataset']}.png"
-    fig.savefig(path, dpi=200, facecolor="white")
-    plt.close(fig)
-    return path
-
-
-def analyse_metric_label(config: dict[str, Any]) -> str:
-    """Returns the metric's name for axis labels.
-
-    Args:
-        config: Parsed config.
-
-    Returns:
-        "test top-1 accuracy".
-    """
-    return {"top1": "test top-1 accuracy"}[config["metric"]]
-
-
 def main() -> None:
-    """Writes the rate-vs-target and error-ratio tables and the figure."""
+    """Writes the rate-vs-target and error-ratio tables."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path)
-    parser.add_argument("--out", type=Path, default=Path("figures"))
-    args = parser.parse_args()
-    config = config_lib.load_config(args.config)
+    config = config_lib.load_config(parser.parse_args().config)
     rows = analyse.load_finals(config)
     results = Path(config["results_dir"])
     curves = rate_curves(config, rows)
     curves.to_csv(results / f"rate_vs_target_{config['dataset']}.csv", index=False)
     errors = error_ratios(config, rows)
     errors.to_csv(results / f"error_ratios_{config['dataset']}.csv", index=False)
-    targets = analyse.targets(config, rows)
-    print(plot_rate_curves(config, curves, targets, args.out))
     flat = curves.groupby("question").E.agg(["min", "max"])
     flat["max_over_min"] = flat["max"] / flat["min"]
     print(flat.round(2).to_string())
