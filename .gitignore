@@ -4,4 +4,4 @@ __pycache__/
 *.log
 /checkpoints/
 /results/pod*/
-/docs/research-log.md
+/docs/
