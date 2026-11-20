@@ -7,6 +7,7 @@ Usage:
 
 import argparse
 import copy
+import dataclasses
 import math
 import os
 import platform
@@ -23,6 +24,27 @@ from bias.models import registry
 
 # Treatments that start from outside-data weights instead of random ones.
 PRETRAINED = frozenset({"imagenet", "imagenet1k"})
+
+
+@dataclasses.dataclass(frozen=True)
+class Job:
+    """One supervised run.
+
+    Attributes:
+        model: "cnn", "vit" or "mlp".
+        treatment: "none", "aug", "lejepa", "imagenet" or "imagenet1k".
+        size: Grid entry.
+        seed: Run seed.
+        lr: Peak learning rate.
+        weight_decay: AdamW weight decay.
+    """
+
+    model: str
+    treatment: str
+    size: str
+    seed: int
+    lr: float
+    weight_decay: float
 
 
 def pick_device() -> torch.device:
@@ -126,15 +148,11 @@ def _load_backbone(model: torch.nn.Module, path: Path) -> None:
 def train_run(
     config: dict[str, Any],
     data: tensors.TensorData,
-    model_name: str,
-    treatment: str,
-    size: str,
-    seed: int,
-    lr: float,
-    weight_decay: float,
+    job: Job,
     stage: str,
     device: torch.device,
     max_steps: int | None = None,
+    step_factor: int = 1,
 ) -> runlog.RunRecord:
     """Trains one model on one subset and scores the best checkpoint.
 
@@ -144,18 +162,14 @@ def train_run(
     Args:
         config: Parsed config.
         data: Dataset tensors on the device.
-        model_name: "cnn", "vit" or "mlp".
-        treatment: "none", "aug", "imagenet" (ViT from ImageNet-21k
-          weights), "imagenet1k" (from ImageNet-1k weights) or "lejepa"
-          (from this seed's LeJEPA backbone). The last three fine-tune
-          the whole network with augmentation.
-        size: Grid entry, such as "10%".
-        seed: Seed for the subset, the init and the batch order.
-        lr: Peak learning rate.
-        weight_decay: AdamW weight decay.
+        job: What to train. Its seed sets the subset, the init and the
+          batch order. The "imagenet", "imagenet1k" and "lejepa" (this
+          seed's backbone) treatments fine-tune the whole network with
+          augmentation.
         stage: Label for the run log, such as "tune" or "final".
         device: Training device.
-        max_steps: Optional override of the step budget, for benchmarks.
+        max_steps: Optional override of the step budget, for smoke tests.
+        step_factor: Multiple of the step budget to train for.
 
     Returns:
         The run's log record.
@@ -164,23 +178,26 @@ def train_run(
         ValueError: If the treatment is unknown.
         FloatingPointError: If the loss diverges.
     """
+    treatment, seed, lr = job.treatment, job.seed, job.lr
     if treatment not in PRETRAINED | {"none", "aug", "lejepa"}:
         raise ValueError(f"unknown treatment: {treatment=}")
-    subset = subsets.draw_subset(data.pool_y.cpu().numpy(), size, seed)
+    subset = subsets.draw_subset(data.pool_y.cpu().numpy(), job.size, seed)
     index = torch.from_numpy(subset.indices).to(device)
     x, y = data.pool_x[index], data.pool_y[index]
-    total = max_steps or step_budget(len(index), config)
+    total = max_steps or step_factor * step_budget(len(index), config)
     batch = min(config["batch_size"], len(index))
     eval_every = max(1, total // config["steps"]["evals"])
 
     torch.manual_seed(seed)
     model = registry.build(
-        model_name, weights=treatment if treatment in PRETRAINED else None
+        job.model, weights=treatment if treatment in PRETRAINED else None
     )
     if treatment == "lejepa":
-        _load_backbone(model, config_lib.lejepa_checkpoint(config, model_name, seed))
+        _load_backbone(model, config_lib.lejepa_checkpoint(config, job.model, seed))
     model = model.to(device)
-    optimiser = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimiser = torch.optim.AdamW(
+        model.parameters(), lr=lr, weight_decay=job.weight_decay
+    )
     generator = torch.Generator(device="cpu").manual_seed(seed)
     order = torch.randperm(len(index), generator=generator)
     cursor = 0
@@ -233,26 +250,12 @@ def train_run(
     model.load_state_dict(best_state)
     runlog.append_history(
         Path(config["results_dir"]) / "history" / f"{config['dataset']}_{stage}.jsonl",
-        {
-            "model": model_name,
-            "treatment": treatment,
-            "size": size,
-            "seed": seed,
-            "lr": lr,
-            "weight_decay": weight_decay,
-            "steps": total,
-            "val": history,
-        },
+        {**dataclasses.asdict(job), "steps": total, "val": history},
     )
     return runlog.RunRecord(
+        **dataclasses.asdict(job),
         dataset=config["dataset"],
-        model=model_name,
-        treatment=treatment,
-        size=size,
         n_labelled=len(index),
-        seed=seed,
-        lr=lr,
-        weight_decay=weight_decay,
         steps=total,
         best_val=best_val,
         test=accuracy(model, data.test_x, data.test_y, bf16=bf16),
@@ -282,19 +285,8 @@ def main() -> None:
     config = config_lib.load_config(args.config)
     device = pick_device()
     data = tensors.load_tensors(config, device)
-    record = train_run(
-        config,
-        data,
-        args.model,
-        args.treatment,
-        args.size,
-        args.seed,
-        args.lr,
-        args.wd,
-        args.stage,
-        device,
-        args.max_steps,
-    )
+    job = Job(args.model, args.treatment, args.size, args.seed, args.lr, args.wd)
+    record = train_run(config, data, job, args.stage, device, args.max_steps)
     print(record)
     default = Path(config["results_dir"]) / f"{config['dataset']}_manual.csv"
     runlog.append_run(args.log or default, record)
