@@ -153,6 +153,7 @@ def train_run(
     device: torch.device,
     max_steps: int | None = None,
     step_factor: int = 1,
+    save_to: Path | None = None,
 ) -> runlog.RunRecord:
     """Trains one model on one subset and scores the best checkpoint.
 
@@ -170,6 +171,7 @@ def train_run(
         device: Training device.
         max_steps: Optional override of the step budget, for smoke tests.
         step_factor: Multiple of the step budget to train for.
+        save_to: Where to save the best checkpoint's weights, if anywhere.
 
     Returns:
         The run's log record.
@@ -248,6 +250,9 @@ def train_run(
     wall = time.perf_counter() - started
 
     model.load_state_dict(best_state)
+    if save_to is not None:
+        save_to.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(best_state, save_to)
     runlog.append_history(
         Path(config["results_dir"]) / "history" / f"{config['dataset']}_{stage}.jsonl",
         {**dataclasses.asdict(job), "steps": total, "val": history},

@@ -5,3 +5,4 @@ __pycache__/
 /checkpoints/
 /results/pod*/
 /docs/
+/results/history/

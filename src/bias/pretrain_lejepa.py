@@ -18,6 +18,7 @@ import argparse
 import json
 import math
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +147,7 @@ def pretrain(
     seed: int,
     device: torch.device,
     max_steps: int | None = None,
+    snapshots: Sequence[int] = (),
 ) -> dict[str, Any]:
     """Pretrains one backbone with LeJEPA and saves it.
 
@@ -156,6 +158,8 @@ def pretrain(
         seed: Seed for the init, the order and the views.
         device: Training device.
         max_steps: Optional override of the step budget, for smoke tests.
+        snapshots: Steps before which the backbone is also saved, as
+          <checkpoint stem>_step<N>.pt.
 
     Returns:
         A summary of the run, also written next to the checkpoint.
@@ -191,7 +195,13 @@ def pretrain(
     bf16 = config.get("precision", "fp32") == "bf16"
     history = []
     started = time.perf_counter()
+    path = config_lib.lejepa_checkpoint(config, model_name, seed)
+    path.parent.mkdir(parents=True, exist_ok=True)
     for step, raw in enumerate(loader):
+        if step in snapshots:
+            torch.save(
+                backbone.state_dict(), path.with_name(f"{path.stem}_step{step}.pt")
+            )
         views = raw.shape[1]
         x = data.prepare(raw.flatten(0, 1))
         for group in optimiser.param_groups:
@@ -217,8 +227,6 @@ def pretrain(
             print(history[-1], flush=True)
     wall = time.perf_counter() - started
 
-    path = config_lib.lejepa_checkpoint(config, model_name, seed)
-    path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(backbone.state_dict(), path)
     summary = {
         "dataset": config["dataset"],
@@ -246,11 +254,14 @@ def main() -> None:
     parser.add_argument("--model", required=True)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--snapshots", type=int, nargs="*", default=[])
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
     device = train.pick_device()
     data = tensors.load_tensors(config, device)
-    summary = pretrain(config, data, args.model, args.seed, device, args.max_steps)
+    summary = pretrain(
+        config, data, args.model, args.seed, device, args.max_steps, args.snapshots
+    )
     print({k: v for k, v in summary.items() if k != "history"})
 
 
