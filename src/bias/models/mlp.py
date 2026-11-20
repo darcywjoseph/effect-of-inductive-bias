@@ -1,4 +1,4 @@
-"""Low-bias model B: a plain MLP on the flattened input.
+"""A plain MLP on the flattened input.
 
 Follows Bachmann et al. (2023): pre-norm residual blocks with an inverted
 bottleneck, and no knowledge of the input's spatial structure.

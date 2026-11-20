@@ -8,9 +8,7 @@ stop-gradient. This follows the authors' minimal reference
 output, 256 random slices redrawn each step, a 17-knot Epps-Pulley test on
 [-3, 3], and the mean over all views as the prediction target.
 
-Each dataset supplies its own view transform (TensorData.ssl_view); see
-augment.cifar_ssl_view for images. Batch-level augmentation is applied to
-every view as well.
+Views come from augment.cifar_ssl_view.
 
 Usage:
     python -m bias.pretrain_lejepa configs/images.yaml --model vit --seed 0
@@ -122,9 +120,6 @@ def knn_accuracy(
 ) -> float:
     """Returns k-nearest-neighbour validation accuracy of frozen features.
 
-    A diagnostic only: it reads pool labels after pretraining is over, and
-    nothing in the study is chosen by it.
-
     Args:
         model: Backbone with its head removed.
         data: Dataset tensors.
@@ -173,7 +168,7 @@ def pretrain(
     total = max_steps or math.ceil(cfg["epochs"] * len(data.pool_raw) / batch)
     weight_decay = cfg["weight_decay"][model_name]
     torch.manual_seed(seed)
-    backbone = registry.build(model_name, config["dataset"])
+    backbone = registry.build(model_name)
     backbone.reset_classifier(0)  # type: ignore[operator]
     dim = int(backbone.num_features)  # type: ignore[arg-type]
     projector = MLP(dim, [2048, 2048, cfg["proj_dim"]], norm_layer=torch.nn.BatchNorm1d)
@@ -198,7 +193,7 @@ def pretrain(
     started = time.perf_counter()
     for step, raw in enumerate(loader):
         views = raw.shape[1]
-        x = data.augment_batch(data.prepare(raw.flatten(0, 1)))
+        x = data.prepare(raw.flatten(0, 1))
         for group in optimiser.param_groups:
             group["lr"] = train.lr_at(step, total, cfg["lr"], cfg["warmup_frac"])
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bf16):

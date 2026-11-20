@@ -1,9 +1,8 @@
-"""Model-ready tensors for every dataset, and how to make more of them.
+"""CIFAR-100 as model-ready tensors, and how to make more of them.
 
-Each dataset keeps its labelled pool twice: as model inputs on the device,
-for the no-augmentation path, and raw on the CPU, for augmentation and
-LeJEPA views. A raw batch becomes model input through prepare, and the
-dataset says which per-example and per-batch augmentation it uses.
+The labelled pool is kept twice: as model inputs on the device, for the
+no-augmentation path, and raw on the CPU, for augmentation and LeJEPA
+views. A raw batch becomes model input through prepare.
 """
 
 import dataclasses
@@ -26,7 +25,7 @@ BatchFn = Callable[[torch.Tensor], torch.Tensor]
 
 @dataclasses.dataclass(frozen=True)
 class TensorData:
-    """One dataset's tensors and its augmentation.
+    """The dataset's tensors and its augmentation.
 
     Attributes:
         pool_x: Labelled pool as model inputs, on the device.
@@ -40,8 +39,6 @@ class TensorData:
         prepare: Turns a raw CPU batch into model inputs on the device.
         augment_example: Per-example augmentation of a raw example, run by
           CPU workers.
-        augment_batch: Augmentation of a prepared batch on the device; the
-          identity for datasets that have none.
         ssl_view: Per-example transform that makes one LeJEPA view.
     """
 
@@ -55,12 +52,7 @@ class TensorData:
     pool_raw: torch.Tensor
     prepare: BatchFn
     augment_example: augment.Transform
-    augment_batch: BatchFn
     ssl_view: augment.Transform
-
-
-def _identity(x: torch.Tensor) -> torch.Tensor:
-    return x
 
 
 def _in_chunks(prepare: BatchFn, raw: torch.Tensor, chunk: int = 4096) -> torch.Tensor:
@@ -77,7 +69,16 @@ class _ImagePrepare:
         return (x - self.mean) / self.std
 
 
-def _cifar(config: dict[str, Any], device: torch.device) -> TensorData:
+def load_tensors(config: dict[str, Any], device: torch.device) -> TensorData:
+    """Loads CIFAR-100 onto the device with its augmentation.
+
+    Args:
+        config: Parsed config.
+        device: Where the model inputs live.
+
+    Returns:
+        The dataset.
+    """
     data = config["data"]
     splits = cifar.load(
         Path(config["data_root"]), data["val_per_class"], data["split_seed"]
@@ -99,29 +100,5 @@ def _cifar(config: dict[str, Any], device: torch.device) -> TensorData:
         pool_raw=pool_raw,
         prepare=prepare,
         augment_example=augment.cifar_transform(),
-        augment_batch=_identity,
         ssl_view=augment.cifar_ssl_view(),
     )
-
-
-LOADERS = {
-    "cifar100": _cifar,
-}
-
-
-def load_tensors(config: dict[str, Any], device: torch.device) -> TensorData:
-    """Loads a dataset onto the device with its augmentation.
-
-    Args:
-        config: Parsed config.
-        device: Where the model inputs live.
-
-    Returns:
-        The dataset.
-
-    Raises:
-        ValueError: If the dataset has no loader.
-    """
-    if config["dataset"] not in LOADERS:
-        raise ValueError(f"no tensor loader for {config['dataset']=}")
-    return LOADERS[config["dataset"]](config, device)
