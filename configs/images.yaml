@@ -13,7 +13,7 @@ targets:
   plateau: {min_gain: 0.01, headroom: {"10%": 0.5, "50%": 0.9}}
 chance: 0.01  # 100 classes
 seeds: [0, 1, 2]
-warmup_frac: 0.05  # share of steps spent on linear warmup
+warmup_frac: 0.05
 batch_size: 128
 precision: bf16  # autocast for every model alike
 workers: 8  # CPU augmentation workers
