@@ -292,6 +292,7 @@ def run_jobs(
     device: torch.device,
     max_steps: int | None = None,
     step_factor: int = 1,
+    micro_batch: int | None = None,
 ) -> None:
     """Trains each job and appends it to the log.
 
@@ -304,10 +305,19 @@ def run_jobs(
         device: Training device.
         max_steps: Optional override of the step budget, for smoke tests.
         step_factor: Multiple of the step budget to train for.
+        micro_batch: Optional micro-batch size, to save memory (see
+          train.train_run).
     """
     for job in jobs:
         record = train.train_run(
-            config, data, job, stage, device, max_steps, step_factor
+            config,
+            data,
+            job,
+            stage,
+            device,
+            max_steps,
+            step_factor,
+            micro_batch=micro_batch,
         )
         print(record, flush=True)
         runlog.append_run(log, record)

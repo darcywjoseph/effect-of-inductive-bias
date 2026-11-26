@@ -137,6 +137,36 @@ def lr_at(step: int, total: int, peak: float, warmup_frac: float) -> float:
     return peak * 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
+def backward(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    micro_batch: int | None = None,
+    bf16: bool = False,
+) -> torch.Tensor:
+    """Adds the gradient of the batch's mean cross-entropy to the model.
+
+    Args:
+        model: Classifier, with gradients zeroed by the caller.
+        x: Input batch.
+        y: Labels.
+        micro_batch: If set, the batch goes through the model in pieces of
+          this many examples, to save memory. Without batch norm the
+          gradient is the same as for the whole batch.
+        bf16: Run the forward pass under bf16 autocast.
+
+    Returns:
+        The loss of the last piece, detached, for divergence checks.
+    """
+    piece = micro_batch or len(x)
+    for start in range(0, len(x), piece):
+        xp, yp = x[start : start + piece], y[start : start + piece]
+        with torch.autocast(x.device.type, dtype=torch.bfloat16, enabled=bf16):
+            loss = torch.nn.functional.cross_entropy(model(xp), yp)
+        (loss * len(xp) / len(x)).backward()  # type: ignore[no-untyped-call]
+    return loss.detach()
+
+
 def _load_backbone(model: torch.nn.Module, path: Path) -> None:
     state = torch.load(path, map_location="cpu", weights_only=True)
     result = model.load_state_dict(state, strict=False)
@@ -154,6 +184,7 @@ def train_run(
     max_steps: int | None = None,
     step_factor: int = 1,
     save_to: Path | None = None,
+    micro_batch: int | None = None,
 ) -> runlog.RunRecord:
     """Trains one model on one subset and scores the best checkpoint.
 
@@ -172,6 +203,10 @@ def train_run(
         max_steps: Optional override of the step budget, for smoke tests.
         step_factor: Multiple of the step budget to train for.
         save_to: Where to save the best checkpoint's weights, if anywhere.
+        micro_batch: If set, each batch goes through the model in pieces of
+          this many images and their gradients are summed before the step,
+          to save memory. The update is the same as for the whole batch.
+          Evaluation then runs in batches of 8 x micro_batch.
 
     Returns:
         The run's log record.
@@ -217,6 +252,8 @@ def train_run(
             int(os.environ.get("BIAS_WORKERS", config.get("workers", 8))),
         )
     bf16 = config.get("precision", "fp32") == "bf16"
+    # Evaluation has no gradients to store, so it can take bigger pieces.
+    eval_batch = 1000 if micro_batch is None else 8 * micro_batch
 
     started = time.perf_counter()
     for step in range(total):
@@ -233,15 +270,13 @@ def train_run(
             xb, yb = x[take], y[take]
         for group in optimiser.param_groups:
             group["lr"] = lr_at(step, total, lr, config["optimiser"]["warmup_frac"])
-        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bf16):
-            loss = torch.nn.functional.cross_entropy(model(xb), yb)
         optimiser.zero_grad(set_to_none=True)
-        loss.backward()  # type: ignore[no-untyped-call]
+        loss = backward(model, xb, yb, micro_batch, bf16)
         optimiser.step()
         if (step + 1) % eval_every == 0 or step + 1 == total:
             if not math.isfinite(loss.item()):
                 raise FloatingPointError(f"loss diverged at step {step}: {loss.item()}")
-            val = accuracy(model, data.val_x, data.val_y, bf16=bf16)
+            val = accuracy(model, data.val_x, data.val_y, eval_batch, bf16)
             history.append((step + 1, val))
             if val > best_val:
                 best_val, best_state = val, copy.deepcopy(model.state_dict())
@@ -263,7 +298,7 @@ def train_run(
         n_labelled=len(index),
         steps=total,
         best_val=best_val,
-        test=accuracy(model, data.test_x, data.test_y, bf16=bf16),
+        test=accuracy(model, data.test_x, data.test_y, eval_batch, bf16),
         metric=config["metric"],
         n_params=registry.count_params(model),
         gpu=device_name(device),
