@@ -273,7 +273,7 @@ def train_run(
             cursor += batch
             xb, yb = x[take], y[take]
         for group in optimiser.param_groups:
-            group["lr"] = lr_at(step, total, lr, config["optimiser"]["warmup_frac"])
+            group["lr"] = lr_at(step, total, lr, config["warmup_frac"])
         optimiser.zero_grad(set_to_none=True)
         loss = backward(model, xb, yb, micro_batch, bf16)
         optimiser.step()
