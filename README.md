@@ -19,9 +19,10 @@ uv run python -m bias.report_splits configs/images.yaml
 # Pretraining, tuning and final runs
 scripts/run_grid.sh configs/images.yaml
 
-# Scrambled-image runs, ViT variants, and what the ViTs attend to
+# Scrambled-image runs, ViT variants and patch sizes, and what the ViTs attend to
 uv run python -m bias.scramble configs/images.yaml
 uv run python -m bias.variants configs/images.yaml
+uv run python -m bias.patches configs/images.yaml
 uv run python -m bias.inside configs/images.yaml train
 uv run python -m bias.inside configs/images.yaml measure
 
