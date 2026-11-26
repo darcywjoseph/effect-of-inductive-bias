@@ -56,6 +56,10 @@ def pick_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
     if torch.backends.mps.is_available():
+        # By default MPS may allocate past physical RAM and swap until the
+        # Mac hangs. Capped at Metal's recommended working set, an oversized
+        # run fails with an out-of-memory error instead.
+        torch.mps.set_per_process_memory_fraction(1.0)
         return torch.device("mps")
     return torch.device("cpu")
 
