@@ -14,7 +14,7 @@ class RunRecord:
 
     Attributes:
         dataset: Dataset name, such as "cifar100".
-        model: "cnn", "vit" or "mlp".
+        model: "cnn", "vit", "mlp" or "vit_<variant>" (see models.vit).
         treatment: "none", "aug", "lejepa", "imagenet" or "imagenet1k".
         size: Grid entry, such as "10%".
         n_labelled: Labelled examples actually used.
@@ -28,7 +28,7 @@ class RunRecord:
         n_params: Trainable parameter count.
         gpu: Device name.
         wall_seconds: Wall-clock training time.
-        stage: "tune" for sweep runs, "final" for reported runs.
+        stage: What the run was for, such as "tune", "final" or "scramble_pixels".
         precision: "fp32" or "bf16" (autocast).
     """
 
