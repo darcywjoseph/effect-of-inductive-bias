@@ -7,9 +7,13 @@ Each variant changes one thing, and several can be combined:
   (and the class token), in every block.
 - "convstem": the linear patch embedding becomes two strided 3x3
   convolutions.
+- "patch<p>": patches are p x p pixels instead of PATCH_SIZE. With p = 1
+  every pixel is a token and nothing is assumed about which pixels belong
+  together. Cannot be combined with "convstem", which fixes the stride at 4.
 """
 
 import math
+import re
 
 import timm
 import torch
@@ -23,16 +27,19 @@ WEIGHTS = {
 }
 
 
-def vit_tiny(num_classes: int, weights: str | None = None) -> torch.nn.Module:
+def vit_tiny(
+    num_classes: int, weights: str | None = None, patch_size: int = PATCH_SIZE
+) -> torch.nn.Module:
     """Builds a ViT-Tiny (192 wide, 12 blocks, 3 heads).
 
     With weights set, timm resamples the 16-pixel patch embedding to
-    PATCH_SIZE and interpolates the position embeddings to the new grid.
+    patch_size and interpolates the position embeddings to the new grid.
     The head is new.
 
     Args:
         num_classes: Output classes.
         weights: None for random weights, or a key of WEIGHTS.
+        patch_size: Side of a patch in pixels; must divide IMG_SIZE.
 
     Returns:
         The model.
@@ -42,7 +49,7 @@ def vit_tiny(num_classes: int, weights: str | None = None) -> torch.nn.Module:
         pretrained=weights is not None,
         num_classes=num_classes,
         img_size=IMG_SIZE,
-        patch_size=PATCH_SIZE,
+        patch_size=patch_size,
     )
     return model
 
@@ -105,20 +112,28 @@ def vit_tiny_variant(variant: str, num_classes: int) -> torch.nn.Module:
     """Builds a ViT-Tiny variant from random weights.
 
     Args:
-        variant: One of VARIANTS, or several joined by "+".
+        variant: One of VARIANTS or "patch<p>", or several joined by "+".
         num_classes: Output classes.
 
     Returns:
         The model.
 
     Raises:
-        ValueError: If the variant is unknown.
+        ValueError: If the variant is unknown, p does not divide IMG_SIZE,
+          or "patch<p>" is combined with "convstem".
     """
     parts = set(variant.split("+"))
-    if not parts <= set(VARIANTS):
+    sizes = [
+        int(m[1]) for part in parts if (m := re.fullmatch(r"patch([1-9]\d*)", part))
+    ]
+    parts -= {f"patch{p}" for p in sizes}
+    if not parts <= set(VARIANTS) or len(sizes) > 1:
         raise ValueError(f"unknown ViT variant: {variant=}")
-    model = vit_tiny(num_classes)
-    side = IMG_SIZE // PATCH_SIZE
+    patch = sizes[0] if sizes else PATCH_SIZE
+    if IMG_SIZE % patch or (sizes and "convstem" in parts):
+        raise ValueError(f"unsupported patch size: {variant=}")
+    model = vit_tiny(num_classes, patch_size=patch)
+    side = IMG_SIZE // patch
     pos = model.get_parameter("pos_embed")
     width = pos.shape[-1]
     if "fixedpos" in parts:

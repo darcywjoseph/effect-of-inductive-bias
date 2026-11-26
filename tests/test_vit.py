@@ -54,3 +54,34 @@ def test_one_local_block_spreads_a_change_by_one_patch() -> None:
 def test_unknown_variant_is_rejected() -> None:
     with pytest.raises(ValueError, match="unknown ViT variant"):
         registry.build("vit_global")
+
+
+@pytest.mark.parametrize(("patch", "tokens"), [(1, 1024), (2, 256), (8, 16)])
+def test_patch_size_sets_the_number_of_tokens(patch: int, tokens: int) -> None:
+    model = registry.build(f"vit_patch{patch}").eval()
+    assert model.get_parameter("pos_embed").shape[1] == 1 + tokens
+    assert model(torch.randn(2, 3, 32, 32)).shape == (2, 100)
+
+
+def test_pixel_tokens_are_blind_to_a_fixed_pixel_permutation() -> None:
+    torch.manual_seed(0)
+    model = registry.build("vit_patch1").eval()
+    permuted = registry.build("vit_patch1").eval()
+    permuted.load_state_dict(model.state_dict())
+    source = torch.randperm(1024)
+    with torch.no_grad():
+        # Token i of the permuted image shows pixel source[i], so it takes
+        # that pixel's position vector.
+        pos = permuted.get_parameter("pos_embed")
+        pos[0, 1:] = model.get_parameter("pos_embed")[0, 1:][source]
+        x = torch.randn(2, 3, 32, 32)
+        shuffled = x.flatten(2)[:, :, source].reshape(x.shape)
+        torch.testing.assert_close(permuted(shuffled), model(x))
+
+
+@pytest.mark.parametrize(
+    "name", ["vit_patch3", "vit_patch2+convstem", "vit_patch2+patch4"]
+)
+def test_bad_patch_variants_are_rejected(name: str) -> None:
+    with pytest.raises(ValueError):
+        registry.build(name)
