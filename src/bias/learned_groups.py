@@ -27,13 +27,14 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--sizes", nargs="+", required=True)
     parser.add_argument("--log", default="grouping", help="Log name suffix.")
+    parser.add_argument("--stage", default=STAGE, help="Stage the runs log under.")
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
     settings = grid.best_settings(grid.read_runs(config, "tune"))
     device = train.pick_device()
     data = tensors.load_tensors(config, device)
     log = Path(config["results_dir"]) / f"{config['dataset']}_{args.log}.csv"
-    checkpoints = Path("checkpoints") / "grouping"
+    checkpoints = Path("checkpoints") / args.stage
     for size in args.sizes:
         for model in args.models:
             job = train.Job(
@@ -43,13 +44,13 @@ def main() -> None:
                 SEED,
                 *grid.tuned(config, settings, "vit", "aug", size),
             )
-            if not grid.unlogged(config, STAGE, [job]):
+            if not grid.unlogged(config, args.stage, [job]):
                 continue
             record = train.train_run(
                 config,
                 data,
                 job,
-                STAGE,
+                args.stage,
                 device,
                 save_to=checkpoints / f"{model}_{size.rstrip('%')}pc_s{SEED}.pt",
             )
