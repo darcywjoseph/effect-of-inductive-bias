@@ -2,10 +2,10 @@
 
 The plain ViT cuts the image into 4x4 patches. These runs use 8 and 2
 pixel patches instead, on real images and on images with all pixels
-shuffled one fixed way. A 1-pixel ViT (every pixel a token, nothing
-assumed about which pixels belong together) was dropped: it needs about
-10 hours per run on the Mac, and 2 pixel patches already score below 4.
-Every run uses augmentation and the plain ViT's tuned settings.
+shuffled one fixed way, plus a 1-pixel ViT: every pixel is a token, so
+nothing is assumed about which pixels belong together. The 1-pixel runs
+need a CUDA GPU; on the Mac they take about 10 hours each. Every run uses
+augmentation and the plain ViT's tuned settings.
 
 Runs go cheapest first. The script skips runs already logged, so it can be
 stopped and restarted.
@@ -26,6 +26,7 @@ SEED = 0
 RUNS: dict[str, tuple[tuple[str, ...], tuple[str, ...], int | None]] = {
     "vit_patch8": (("5%", "10%", "20%"), ("10%",), None),
     "vit_patch2": (("5%", "10%", "20%"), ("10%",), None),
+    "vit_patch1": (("5%", "10%", "20%", "100%"), ("10%",), None),
 }
 
 
