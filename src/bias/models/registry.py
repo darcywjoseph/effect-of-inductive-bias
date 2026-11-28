@@ -2,14 +2,15 @@
 
 import torch
 
-from bias.models import cnn, mlp, vit
+from bias.models import cnn, grouping, mlp, vit
 
 
 def build(name: str, weights: str | None = None) -> torch.nn.Module:
     """Builds a model for CIFAR-100.
 
     Args:
-        name: "cnn", "vit", "mlp", or "vit_<variant>" (see models.vit).
+        name: "cnn", "vit", "mlp", "vit_<variant>" (see models.vit), or
+          "group_<kind>" (see models.grouping).
         weights: None for random weights, "imagenet" (ImageNet-21k, ViT
           only) or "imagenet1k" (ImageNet-1k, ViT or CNN).
 
@@ -29,6 +30,8 @@ def build(name: str, weights: str | None = None) -> torch.nn.Module:
         return vit.vit_tiny(100, weights=weights)
     if name == "mlp":
         return mlp.MLP((3, 32, 32), 100)
+    if name.startswith("group_"):
+        return grouping.GroupViT(100, name.removeprefix("group_"))
     if name.startswith("vit_"):
         return vit.vit_tiny_variant(name.removeprefix("vit_"), 100)
     raise ValueError(f"unknown model: {name=}")
