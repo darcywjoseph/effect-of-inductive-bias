@@ -1,0 +1,66 @@
+dataset: imagenet32
+data_root: data
+metric: top1
+data: {val_per_class: 10, split_seed: 0}  # official ImageNet val (50k) is the test set
+grid: ["1%", "2%", "5%", "10%", "20%", "50%", "100%"]
+anchors: ["1%", "10%", "100%"]
+# Targets are the reference's seed-mean test scores at these sizes. One
+# that gains less than min_gain to the next grid size is replaced by
+# chance + headroom x (the reference's score at the largest size - chance).
+targets:
+  reference: {model: cnn, treatment: aug}
+  sizes: ["10%", "50%"]
+  plateau: {min_gain: 0.01, headroom: {"10%": 0.5, "50%": 0.9}}
+chance: 0.001  # 1,000 classes
+seeds: [0, 1, 2]
+warmup_frac: 0.05
+batch_size: 128
+precision: bf16  # autocast for every model alike
+workers: 12  # CPU augmentation workers
+steps: {epochs_equivalent: 200, min: 100000, max: 100000, evals: 20}  # fixed budget: 200 epochs of 1.27M images is out of reach
+sweep:
+  lr: [1.0e-4, 3.0e-4, 1.0e-3]
+  # Rungs past the grid, tried only where the best lr sits at an edge.
+  lr_ladder: [1.0e-5, 3.0e-5, 1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2]
+  weight_decay: [0.05, 0.1]
+  seed: 0
+configurations:
+  - [cnn, none]
+  - [cnn, aug]
+  - [cnn, lejepa]
+  - [vit, none]
+  - [vit, aug]
+  - [vit, lejepa]
+  - [vit, imagenet]
+  - [vit, imagenet1k]
+  - [cnn, imagenet1k]
+  - [mlp, none]
+  - [mlp, aug]
+  - [mlp, lejepa]
+# These setups rerun at factor x the step budget, seed 0. A validation gain
+# of threshold or more flags the budget as too short.
+budget_check:
+  factor: 2
+  threshold: 0.01
+  sizes: ["10%", "100%"]
+  configurations:
+    - [cnn, none]
+    - [cnn, aug]
+    - [vit, none]
+    - [vit, aug]
+bootstrap: {draws: 10000, level: 0.95}
+results_dir: results
+figures_dir: figures
+# LeJEPA pretraining on the whole pool, labels removed. One backbone per
+# model and seed, reused at every data size.
+lejepa:
+  epochs: 200
+  batch: 256
+  views: 4
+  lam: 0.02
+  proj_dim: 16
+  slices: 256
+  lr: 2.0e-3
+  warmup_frac: 0.05
+  weight_decay: {cnn: 5.0e-4, vit: 0.05, mlp: 0.05}
+  checkpoint_dir: checkpoints/lejepa

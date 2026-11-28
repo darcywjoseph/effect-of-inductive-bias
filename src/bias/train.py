@@ -224,14 +224,17 @@ def train_run(
         raise ValueError(f"unknown treatment: {treatment=}")
     subset = subsets.draw_subset(data.pool_y.cpu().numpy(), job.size, seed)
     index = torch.from_numpy(subset.indices).to(device)
-    x, y = data.pool_x[index], data.pool_y[index]
+    if treatment == "none":
+        x, y = data.pool_x[index], data.pool_y[index]
     total = max_steps or step_factor * step_budget(len(index), config)
     batch = min(config["batch_size"], len(index))
     eval_every = max(1, total // config["steps"]["evals"])
 
     torch.manual_seed(seed)
     model = registry.build(
-        job.model, weights=treatment if treatment in PRETRAINED else None
+        job.model,
+        weights=treatment if treatment in PRETRAINED else None,
+        num_classes=data.num_classes,
     )
     if treatment == "lejepa":
         _load_backbone(model, config_lib.lejepa_checkpoint(config, job.model, seed))

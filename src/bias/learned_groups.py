@@ -28,9 +28,16 @@ def main() -> None:
     parser.add_argument("--sizes", nargs="+", required=True)
     parser.add_argument("--log", default="grouping", help="Log name suffix.")
     parser.add_argument("--stage", default=STAGE, help="Stage the runs log under.")
+    parser.add_argument(
+        "--settings-from",
+        type=Path,
+        help="Another dataset's config whose full-size tuned lr and weight "
+        "decay are used for every size (default: this config, nearest anchor).",
+    )
     args = parser.parse_args()
     config = config_lib.load_config(args.config)
-    settings = grid.best_settings(grid.read_runs(config, "tune"))
+    tuned_on = config_lib.load_config(args.settings_from or args.config)
+    settings = grid.best_settings(grid.read_runs(tuned_on, "tune"))
     device = train.pick_device()
     data = tensors.load_tensors(config, device)
     log = Path(config["results_dir"]) / f"{config['dataset']}_{args.log}.csv"
@@ -42,7 +49,13 @@ def main() -> None:
                 "aug",
                 size,
                 SEED,
-                *grid.tuned(config, settings, "vit", "aug", size),
+                *grid.tuned(
+                    tuned_on,
+                    settings,
+                    "vit",
+                    "aug",
+                    "100%" if args.settings_from else size,
+                ),
             )
             if not grid.unlogged(config, args.stage, [job]):
                 continue
